@@ -7,7 +7,6 @@ from flask import current_app
 from panel.extensions import db
 from panel.models import Domain, SSLCertificate, Subdomain
 from panel.services.audit import log_activity
-from panel.services.hosts import HostsHelperError
 
 import json
 import subprocess
@@ -50,6 +49,10 @@ def run_ssl_helper(payload: dict) -> dict:
 
 
 def bind_certificate_target(cert: SSLCertificate, target_type: str, target) -> None:
+    if cert.domain is not None:
+        cert.domain.ssl_enabled = False
+    if cert.subdomain is not None:
+        cert.subdomain.ssl_enabled = False
     cert.domain = None
     cert.subdomain = None
     if target_type == "domain":

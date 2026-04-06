@@ -13,6 +13,7 @@ Installer został przebudowany tak, aby używał systemowego Pythona z repozytor
 - webowy menedżer plików dla klienta z separacją per klient
 - monitoring usług i metryki serwera
 - bezpieczny helper do zarządzania `/etc/hosts` przez `sudo`
+- generowanie i odnawianie certyfikatów SSL dla domen i subdomen
 - wdrożenie przez `install.sh`, Gunicorn, systemd i opcjonalny nginx
 
 ## Szybki start developerski
@@ -46,6 +47,7 @@ Installer instaluje jeden z wariantów:
   - `python3-dev`
 
 Installer tworzy i włącza usługę `systemd`, która autostartuje aplikację po restarcie serwera.
+Panel jest publikowany przez nginx na porcie `80`.
 
 Najważniejsze polecenia:
 
@@ -112,6 +114,30 @@ Mechanizm:
 - instaluje zależności z `requirements.txt`
 - uruchamia migracje bazy
 - restartuje `hosting-panel.service`
+
+## SSL dla domen i subdomen
+
+Panel obsługuje teraz certyfikaty SSL zarówno dla domen głównych, jak i subdomen.
+
+Wdrożenie instaluje:
+
+- helper `/usr/local/bin/hosting-panel-ssl-helper`
+- regułę sudo dla ograniczonego uruchamiania helpera
+- pakiet `certbot`
+
+Z poziomu panelu można:
+
+- utworzyć rekord certyfikatu dla domeny albo subdomeny
+- wygenerować certyfikat Let's Encrypt
+- odnowić istniejący certyfikat
+- zapisać ścieżki do certyfikatów manualnych
+
+Konfiguracja:
+
+```env
+SSL_HELPER_PATH=/usr/local/bin/hosting-panel-ssl-helper
+LETSENCRYPT_EMAIL=admin@example.com
+```
 
 Przydatne polecenia:
 
