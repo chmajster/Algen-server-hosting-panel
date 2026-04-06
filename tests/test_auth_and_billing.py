@@ -4,7 +4,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from panel.extensions import db
-from panel.models import BillingTransaction, Client, Domain, Mailbox, SSLCertificate, Subdomain, SystemSetting, User
+from panel.models import BillingTransaction, Client, DatabaseUser, Domain, HostingDatabase, Mailbox, SSLCertificate, Subdomain, SystemSetting, User
 from panel.seed import seed_defaults
 from panel.services.billing import adjust_balance
 
@@ -259,6 +259,92 @@ def test_client_cannot_open_admin_panel(client):
     client.post("/auth/login", data={"username": "client", "password": "Client123!"}, follow_redirects=True)
     response = client.get("/admin/", follow_redirects=False)
     assert response.status_code == 403
+
+
+def test_client_can_create_database_user_with_prefixed_login(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        database = HostingDatabase(
+            client=client_profile,
+            name="client_data_db",
+            engine="mariadb",
+            charset="utf8mb4",
+            collation="utf8mb4_unicode_ci",
+            status="active",
+        )
+        db.session.add(database)
+        db.session.commit()
+        database_id = database.id
+        expected_prefix = f"{client_profile.user.username}_"
+
+    client.post("/auth/login", data={"username": "client", "password": "Client123!"}, follow_redirects=True)
+    response = client.post(
+        f"/client/databases/{database_id}/users/new",
+        data={
+            "database_id": database_id,
+            "username": "app",
+            "password": "StrongPass1!",
+            "host": "localhost",
+            "privileges": ["SELECT", "INSERT"],
+            "status": "active",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    with app.app_context():
+        db_user = DatabaseUser.query.filter_by(database_id=database_id).first()
+        assert db_user is not None
+        assert db_user.username == f"{expected_prefix}app"
+        assert db_user.privileges == ["SELECT", "INSERT"]
+
+
+def test_client_can_manage_database_user_privileges(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        database = HostingDatabase(
+            client=client_profile,
+            name="client_reporting_db",
+            engine="mariadb",
+            charset="utf8mb4",
+            collation="utf8mb4_unicode_ci",
+            status="active",
+        )
+        db_user = DatabaseUser(
+            database=database,
+            username=f"{client_profile.user.username}_report",
+            host="localhost",
+            status="active",
+            privileges=["SELECT"],
+        )
+        db_user.set_password("StrongPass1!")
+        db.session.add_all([database, db_user])
+        db.session.commit()
+        db_user_id = db_user.id
+        database_id = database.id
+
+    client.post("/auth/login", data={"username": "client", "password": "Client123!"}, follow_redirects=True)
+    response = client.post(
+        f"/client/databases/users/{db_user_id}/edit",
+        data={
+            "database_id": database_id,
+            "username": "report",
+            "password": "",
+            "host": "127.0.0.1",
+            "privileges": ["SELECT", "UPDATE", "DELETE"],
+            "status": "disabled",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    with app.app_context():
+        updated = DatabaseUser.query.get(db_user_id)
+        assert updated is not None
+        assert updated.username == "client_report"
+        assert updated.host == "127.0.0.1"
+        assert updated.status == "disabled"
+        assert updated.privileges == ["SELECT", "UPDATE", "DELETE"]
 
 
 def test_balance_adjustment_creates_transaction(app):

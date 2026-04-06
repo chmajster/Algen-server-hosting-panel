@@ -10,6 +10,8 @@ Installer został przebudowany tak, aby używał systemowego Pythona z repozytor
 - uwierzytelnianie, role, sesje, CSRF i rate limiting logowania
 - billing oparty o saldo klienta i cykle rozliczeń
 - domeny, subdomeny, bazy danych, FTP, DNS, SSL, poczta, backupy
+- instalacja i publikacja phpMyAdmin pod `/phpmyadmin/` (link z panelu admina i klienta)
+- 1 kontener Docker z Apache per klient, z automatyczna synchronizacja VirtualHostow
 - webowy menedżer plików dla klienta z separacją per klient
 - monitoring usług i metryki serwera
 - bezpieczny helper do zarządzania `/etc/hosts` przez `sudo`
@@ -46,7 +48,7 @@ Jesli konto administratora juz istnieje, uruchomienie z `-p` wymusi aktualizacje
 Installer ma kolorowy, etapowy output i na końcu pokazuje publiczny adres IP serwera oraz adres panelu na porcie `80`.
 Przy ponownej instalacji, jeśli konto administratora już istnieje, installer nie zmienia jego hasła bez jawnego użycia argumentu `-p`.
 Logowanie ma osobny limit prób oparty o rzeczywisty adres IP klienta za nginx i zwraca własny widok `429`, zamiast surowej strony biblioteki.
-Po instalacji installer wykonuje też informacyjny test usług i pokazuje, czy `hosting-panel`, `mariadb`, `nginx`, timer auto-update oraz sam panel HTTP odpowiadają poprawnie.
+Po instalacji installer wykonuje też informacyjny test usług i pokazuje, czy `hosting-panel`, `mariadb`, `nginx`, `php-fpm`, timer auto-update, panel HTTP oraz `phpMyAdmin` odpowiadają poprawnie.
 
 Installer instaluje jeden z wariantów:
 
@@ -61,6 +63,51 @@ Installer instaluje jeden z wariantów:
 
 Installer tworzy i włącza usługę `systemd`, która autostartuje aplikację po restarcie serwera.
 Panel jest publikowany przez nginx na porcie `80`.
+phpMyAdmin jest instalowany automatycznie i dostępny pod adresem `/phpmyadmin/`.
+
+## Bazy danych klienta
+
+Panel klienta pozwala teraz na:
+
+- zakładanie kont użytkowników DB z poziomu panelu klienta,
+- zarządzanie uprawnieniami użytkowników DB (np. `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `ALL`),
+- zmianę hosta i statusu konta DB,
+- reset hasła użytkownika DB.
+
+Wymuszenie nazewnictwa kont DB:
+
+- każdy użytkownik DB tworzony przez klienta dostaje prefiks loginu klienta,
+- przykład: dla loginu `client1` konto DB zostanie zapisane jako `client1_nazwa`.
+
+## Apache per klient (Docker)
+
+Panel obsluguje model:
+
+- jeden klient = jeden kontener Docker z Apache,
+- wszystkie domeny i subdomeny klienta sa mapowane jako VirtualHosty w tym kontenerze,
+- po kazdej zmianie domen (utworzenie, edycja, usuniecie, dodanie subdomeny) konfiguracja kontenera jest synchronizowana automatycznie.
+
+Instalator:
+
+- instaluje `docker.io`,
+- uruchamia `docker.service`,
+- dodaje uzytkownika uslugi panelu do grupy `docker`,
+- wlacza funkcje kontenerow Apache per klient przez `.env`.
+
+Zmienne konfiguracyjne:
+
+```env
+CLIENT_APACHE_ENABLED=true
+CLIENT_APACHE_IMAGE=httpd:2.4
+CLIENT_APACHE_BIND_ADDRESS=127.0.0.1
+CLIENT_APACHE_HTTP_PORT_BASE=18000
+CLIENT_APACHE_CONTAINER_PREFIX=hosting-panel-client-apache
+CLIENT_APACHE_REMOVE_EMPTY=true
+```
+
+Port HTTP kontenera klienta jest wyliczany jako:
+
+`CLIENT_APACHE_HTTP_PORT_BASE + client_id`
 
 Najważniejsze polecenia:
 

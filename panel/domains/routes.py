@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from flask import Blueprint, flash, redirect, render_template, url_for
-from flask_login import login_required
+from flask import Blueprint, current_app, flash, redirect, render_template, url_for
+from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
 
 from panel.extensions import db
 from panel.forms.services import DomainForm, SubdomainForm
 from panel.models import Client, Domain, Subdomain
 from panel.services.audit import log_activity
+from panel.services.client_apache import ClientApacheServiceError, sync_client_apache_instance
 from panel.services.domains import (
     DomainProvisioningError,
     managed_domain_public_root,
@@ -32,6 +33,16 @@ def _managed_domain_preview(client: Client | None, domain_name: str | None) -> s
     if client is None or not domain_name:
         return ""
     return str(managed_domain_public_root(client, domain_name))
+
+
+def _sync_client_apache(client: Client, reason: str) -> None:
+    try:
+        sync_client_apache_instance(client, reason=reason, actor=current_user if current_user.is_authenticated else None)
+        db.session.commit()
+    except ClientApacheServiceError as exc:
+        db.session.rollback()
+        current_app.logger.warning("Client Apache sync failed for client_id=%s: %s", client.id, exc)
+        flash(f"Uwaga: nie udalo sie zsynchronizowac kontenera Apache klienta: {exc}", "warning")
 
 
 @domains_bp.route("/admin/domains")
@@ -92,6 +103,7 @@ def admin_domain_create():
                 managed_root_preview=_managed_domain_preview(client, domain_name),
             )
         flash("Domena zostala utworzona wraz z katalogami public, private, subdomains, ssl i config.", "success")
+        _sync_client_apache(client, "domains.create")
         return redirect(url_for("domains.admin_domains"))
 
     preview_client = Client.query.get(form.client_id.data) if form.client_id.data else None
@@ -152,6 +164,7 @@ def admin_domain_edit(domain_id: int):
                 managed_root_preview=_managed_domain_preview(client, domain_name),
             )
         flash("Domena zostala zaktualizowana.", "success")
+        _sync_client_apache(client, "domains.edit")
         return redirect(url_for("domains.admin_domains"))
 
     return render_template(
@@ -167,11 +180,13 @@ def admin_domain_edit(domain_id: int):
 @roles_required("administrator")
 def admin_domain_delete(domain_id: int):
     domain = Domain.query.get_or_404(domain_id)
+    client = domain.client
     name = domain.name
     db.session.delete(domain)
-    log_activity("domains.delete", "domain", f"Usunieto domene {name}", entity_id=domain_id, client=domain.client)
+    log_activity("domains.delete", "domain", f"Usunieto domene {name}", entity_id=domain_id, client=client)
     db.session.commit()
     flash("Domena zostala usunieta.", "warning")
+    _sync_client_apache(client, "domains.delete")
     return redirect(url_for("domains.admin_domains"))
 
 
@@ -225,6 +240,7 @@ def admin_subdomain_create(domain_id: int):
                 managed_root_preview=str(managed_subdomain_public_root(domain, subdomain_name)),
             )
         flash("Subdomena zostala dodana wraz z wlasna struktura katalogow.", "success")
+        _sync_client_apache(domain.client, "domains.subdomain_create")
         return redirect(url_for("domains.admin_domains"))
 
     return render_template(
@@ -281,6 +297,7 @@ def client_domain_edit(domain_id: int):
                 managed_root_preview=_managed_domain_preview(domain.client, domain.name),
             )
         flash("Domena zostala zaktualizowana.", "success")
+        _sync_client_apache(domain.client, "domains.client_edit")
         return redirect(url_for("domains.client_domains"))
 
     return render_template(

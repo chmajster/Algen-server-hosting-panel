@@ -49,6 +49,13 @@ class Config:
     HOSTS_PROTECT_CRITICAL = os.getenv("HOSTS_PROTECT_CRITICAL", "true").lower() == "true"
     MAIL_DEFAULT_QUOTA_MB = int(os.getenv("MAIL_DEFAULT_QUOTA_MB", "1024"))
     DEFAULT_PHP_VERSION = os.getenv("DEFAULT_PHP_VERSION", "8.3")
+    PHPMYADMIN_URL = os.getenv("PHPMYADMIN_URL", "/phpmyadmin/")
+    CLIENT_APACHE_ENABLED = os.getenv("CLIENT_APACHE_ENABLED", "false").lower() == "true"
+    CLIENT_APACHE_IMAGE = os.getenv("CLIENT_APACHE_IMAGE", "httpd:2.4")
+    CLIENT_APACHE_BIND_ADDRESS = os.getenv("CLIENT_APACHE_BIND_ADDRESS", "127.0.0.1")
+    CLIENT_APACHE_HTTP_PORT_BASE = int(os.getenv("CLIENT_APACHE_HTTP_PORT_BASE", "18000"))
+    CLIENT_APACHE_CONTAINER_PREFIX = os.getenv("CLIENT_APACHE_CONTAINER_PREFIX", "hosting-panel-client-apache")
+    CLIENT_APACHE_REMOVE_EMPTY = os.getenv("CLIENT_APACHE_REMOVE_EMPTY", "true").lower() == "true"
     SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
     REMEMBER_COOKIE_SECURE = SESSION_COOKIE_SECURE
     WTF_CSRF_TIME_LIMIT = None

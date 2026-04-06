@@ -10,6 +10,7 @@
     <a class="nav-link {% if request.endpoint in ['billing.admin_services', 'billing.admin_service_create'] %}active{% endif %}" href="{{ url_for('billing.admin_services') }}">Uslugi</a>
     <a class="nav-link {% if request.endpoint in ['domains.admin_domains', 'domains.admin_domain_create', 'domains.admin_domain_edit'] %}active{% endif %}" href="{{ url_for('domains.admin_domains') }}">Domeny</a>
     <a class="nav-link {% if request.endpoint in ['databases.admin_databases', 'databases.admin_database_create', 'databases.admin_database_user_create'] %}active{% endif %}" href="{{ url_for('databases.admin_databases') }}">Bazy danych</a>
+    <a class="nav-link" href="{{ config.PHPMYADMIN_URL }}" target="_blank" rel="noopener">phpMyAdmin</a>
     <a class="nav-link {% if request.endpoint in ['ftp.admin_accounts', 'ftp.admin_create'] %}active{% endif %}" href="{{ url_for('ftp.admin_accounts') }}">FTP</a>
     <a class="nav-link {% if request.endpoint in ['dns.admin_dns', 'dns.admin_zone_create', 'dns.admin_record_create'] %}active{% endif %}" href="{{ url_for('dns.admin_dns') }}">DNS</a>
     <a class="nav-link {% if request.endpoint in ['mail.admin_mail', 'mail.admin_mailbox_create', 'mail.admin_mailbox_edit', 'mail.admin_alias_create', 'mail.admin_alias_edit'] %}active{% endif %}" href="{{ url_for('mail.admin_mail') }}">Poczta</a>
@@ -22,7 +23,8 @@
     <a class="nav-link {% if request.endpoint == 'client.dashboard' %}active{% endif %}" href="{{ url_for('client.dashboard') }}">Dashboard</a>
     <a class="nav-link {% if request.endpoint == 'billing.client_billing' %}active{% endif %}" href="{{ url_for('billing.client_billing') }}">Billing</a>
     <a class="nav-link {% if request.endpoint in ['domains.client_domains', 'domains.client_domain_edit'] %}active{% endif %}" href="{{ url_for('domains.client_domains') }}">Domeny</a>
-    <a class="nav-link {% if request.endpoint in ['databases.client_databases', 'databases.client_database_edit'] %}active{% endif %}" href="{{ url_for('databases.client_databases') }}">Bazy danych</a>
+    <a class="nav-link {% if request.endpoint in ['databases.client_databases', 'databases.client_database_edit', 'databases.client_database_user_create', 'databases.client_database_user_edit'] %}active{% endif %}" href="{{ url_for('databases.client_databases') }}">Bazy danych</a>
+    <a class="nav-link" href="{{ config.PHPMYADMIN_URL }}" target="_blank" rel="noopener">phpMyAdmin</a>
     <a class="nav-link {% if request.endpoint in ['ftp.client_accounts', 'ftp.client_create', 'ftp.client_edit'] %}active{% endif %}" href="{{ url_for('ftp.client_accounts') }}">FTP</a>
     <a class="nav-link {% if request.endpoint in ['dns.client_dns', 'dns.client_record_edit'] %}active{% endif %}" href="{{ url_for('dns.client_dns') }}">DNS</a>
     <a class="nav-link {% if request.endpoint in ['mail.client_mail', 'mail.client_mailbox_create', 'mail.client_mailbox_edit', 'mail.client_alias_create', 'mail.client_alias_edit'] %}active{% endif %}" href="{{ url_for('mail.client_mail') }}">Poczta</a>

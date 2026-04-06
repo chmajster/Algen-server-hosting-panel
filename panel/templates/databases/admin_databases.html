@@ -1,6 +1,69 @@
 {% extends "layouts/base.html" %}
 {% block content %}
-<div class="d-flex justify-content-between mb-3"><h1 class="h3">Bazy danych</h1><a class="btn btn-primary" href="{{ url_for('databases.admin_database_create') }}">Nowa baza</a></div>
-<div class="surface-card p-3 mb-3"><div class="table-responsive"><table class="table"><thead><tr><th>Baza</th><th>Klient</th><th>Engine</th><th>Charset</th><th>Status</th><th></th></tr></thead><tbody>{% for database in databases %}<tr><td>{{ database.name }}</td><td>{{ database.client.user.username }}</td><td>{{ database.engine }}</td><td>{{ database.charset }}</td><td>{{ database.status }}</td><td><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('databases.admin_database_user_create', database_id=database.id) }}">Dodaj użytkownika DB</a></td></tr>{% endfor %}</tbody></table></div></div>
-<div class="surface-card p-3"><h2 class="h5">Użytkownicy baz danych</h2><div class="table-responsive"><table class="table"><thead><tr><th>Użytkownik</th><th>Baza</th><th>Host</th><th>Status</th></tr></thead><tbody>{% for item in db_users %}<tr><td>{{ item.username }}</td><td>{{ item.database.name }}</td><td>{{ item.host }}</td><td>{{ item.status }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="d-flex justify-content-between mb-3">
+	<h1 class="h3">Bazy danych</h1>
+	<div class="d-flex gap-2">
+		<a class="btn btn-outline-secondary" href="{{ config.PHPMYADMIN_URL }}" target="_blank" rel="noopener">Otworz phpMyAdmin</a>
+		<a class="btn btn-primary" href="{{ url_for('databases.admin_database_create') }}">Nowa baza</a>
+	</div>
+</div>
+
+<div class="surface-card p-3 mb-3">
+	<div class="table-responsive">
+		<table class="table">
+			<thead>
+				<tr>
+					<th>Baza</th>
+					<th>Klient</th>
+					<th>Engine</th>
+					<th>Charset</th>
+					<th>Status</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for database in databases %}
+					<tr>
+						<td>{{ database.name }}</td>
+						<td>{{ database.client.user.username }}</td>
+						<td>{{ database.engine }}</td>
+						<td>{{ database.charset }}</td>
+						<td>{{ database.status }}</td>
+						<td>
+							<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('databases.admin_database_user_create', database_id=database.id) }}">Dodaj uzytkownika DB</a>
+						</td>
+					</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+</div>
+
+<div class="surface-card p-3">
+	<h2 class="h5">Uzytkownicy baz danych</h2>
+	<div class="table-responsive">
+		<table class="table">
+			<thead>
+				<tr>
+					<th>Uzytkownik</th>
+					<th>Baza</th>
+					<th>Host</th>
+					<th>Uprawnienia</th>
+					<th>Status</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for item in db_users %}
+					<tr>
+						<td>{{ item.username }}</td>
+						<td>{{ item.database.name }}</td>
+						<td>{{ item.host }}</td>
+						<td>{{ (item.privileges or ['ALL']) | join(', ') }}</td>
+						<td>{{ item.status }}</td>
+					</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+</div>
 {% endblock %}

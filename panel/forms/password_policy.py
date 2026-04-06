@@ -4,7 +4,7 @@ from wtforms import ValidationError
 from wtforms.validators import DataRequired, Length, Optional
 
 
-def strong_password(field) -> None:
+def strong_password(form, field) -> None:
     password = field.data or ""
     if not password:
         return

@@ -60,7 +60,7 @@ else
 fi
 
 CURRENT_STEP=0
-TOTAL_STEPS=13
+TOTAL_STEPS=14
 
 print_banner() {
   printf '%s\n' "${C_CYAN}${C_BOLD}============================================================${C_RESET}"
@@ -171,6 +171,17 @@ sql_escape() {
   printf "%s" "${value//\'/\'\'}"
 }
 
+detect_php_fpm_unit() {
+  systemctl list-unit-files 'php*-fpm.service' --no-legend 2>/dev/null | awk 'NR==1 {print $1}'
+}
+
+detect_php_fpm_socket() {
+  local socket_path
+  socket_path="$(find /run/php -maxdepth 1 -type s -name 'php*-fpm.sock' 2>/dev/null | sort | head -n 1 || true)"
+  [[ -n "$socket_path" ]] || fail "Nie znaleziono socketu php-fpm (oczekiwano /run/php/php*-fpm.sock)."
+  printf "%s" "$socket_path"
+}
+
 install_system_packages() {
   step "Instalacja pakietow systemowych"
   apt-get update
@@ -179,13 +190,28 @@ install_system_packages() {
     libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev
     libffi-dev libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev
     liblzma-dev libgdbm-dev uuid-dev libmariadb-dev mariadb-server mariadb-client
-    sudo certbot
+    sudo certbot docker.io php-fpm php-mysql php-mbstring php-xml php-zip php-curl php-gd phpmyadmin
   )
   if [[ "$INSTALL_NGINX" == "true" ]]; then
     packages+=(nginx)
   fi
+
+  echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect none" | debconf-set-selections
+  echo "phpmyadmin phpmyadmin/dbconfig-install boolean false" | debconf-set-selections
+
   DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
-  ok "Pakiety systemowe zainstalowane"
+
+  local php_fpm_unit
+  php_fpm_unit="$(detect_php_fpm_unit)"
+  if [[ -n "$php_fpm_unit" ]]; then
+    systemctl enable "$php_fpm_unit"
+    systemctl restart "$php_fpm_unit"
+    info "Aktywowano usluge ${php_fpm_unit}"
+  else
+    warn "Nie wykryto uslugi php-fpm po instalacji pakietow."
+  fi
+
+  ok "Pakiety systemowe i phpMyAdmin zainstalowane"
 }
 
 install_python() {
@@ -230,6 +256,16 @@ ensure_app_user() {
     useradd --system --gid "$APP_GROUP" --home "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
   fi
   ok "Uzytkownik ${APP_USER}:${APP_GROUP} gotowy"
+}
+
+configure_docker_runtime() {
+  step "Konfiguracja Docker Runtime"
+  systemctl enable docker
+  systemctl restart docker
+  if getent group docker >/dev/null; then
+    usermod -aG docker "$APP_USER"
+  fi
+  ok "Docker aktywny, a ${APP_USER} ma dostep do grupy docker"
 }
 
 deploy_code() {
@@ -312,6 +348,13 @@ generate_env() {
   set_env_key "RATELIMIT_DEFAULT" "200/day;50/hour"
   set_env_key "RATELIMIT_STORAGE_URI" "memory://"
   set_env_key "LOGIN_RATELIMIT" "10 per 10 minutes"
+  set_env_key "PHPMYADMIN_URL" "/phpmyadmin/"
+  set_env_key "CLIENT_APACHE_ENABLED" "true"
+  set_env_key "CLIENT_APACHE_IMAGE" "httpd:2.4"
+  set_env_key "CLIENT_APACHE_BIND_ADDRESS" "127.0.0.1"
+  set_env_key "CLIENT_APACHE_HTTP_PORT_BASE" "18000"
+  set_env_key "CLIENT_APACHE_CONTAINER_PREFIX" "hosting-panel-client-apache"
+  set_env_key "CLIENT_APACHE_REMOVE_EMPTY" "true"
   set_env_key "SESSION_COOKIE_SECURE" "false"
   set_env_key "AUTOUPDATE_ENABLED" "$AUTOUPDATE_ENABLED"
   set_env_key "AUTOUPDATE_REPO_URL" "$AUTOUPDATE_REPO_URL"
@@ -398,9 +441,14 @@ configure_autoupdate() {
 configure_nginx() {
   step "Konfiguracja nginx na porcie 80"
   [[ "$INSTALL_NGINX" == "true" ]] || return 0
+  local php_fpm_socket
+  php_fpm_socket="$(detect_php_fpm_socket)"
   log "Konfiguruje nginx"
   backup_file /etc/nginx/sites-available/hosting-panel
-  sed "s/server_name _;/server_name ${APP_DOMAIN};/" "$APP_DIR/deploy/nginx-hosting-panel.conf" > /etc/nginx/sites-available/hosting-panel
+  sed \
+    -e "s/server_name _;/server_name ${APP_DOMAIN};/" \
+    -e "s#__PHP_FPM_SOCK__#${php_fpm_socket}#" \
+    "$APP_DIR/deploy/nginx-hosting-panel.conf" > /etc/nginx/sites-available/hosting-panel
   ln -sf /etc/nginx/sites-available/hosting-panel /etc/nginx/sites-enabled/hosting-panel
   rm -f /etc/nginx/sites-enabled/default
   nginx -t
@@ -440,10 +488,16 @@ report_http_status() {
 verify_services() {
   step "Test uslug po instalacji"
   info "Ponizszy raport ma charakter informacyjny i nie przerywa instalacji."
+  local php_fpm_unit
+  php_fpm_unit="$(detect_php_fpm_unit)"
   report_unit_status "Hosting Panel" "hosting-panel.service"
   report_unit_status "MariaDB" "mariadb.service"
+  report_unit_status "Docker" "docker.service"
   if [[ "$INSTALL_NGINX" == "true" ]]; then
     report_unit_status "nginx" "nginx.service"
+  fi
+  if [[ -n "$php_fpm_unit" ]]; then
+    report_unit_status "PHP-FPM" "$php_fpm_unit"
   fi
   if [[ "$AUTOUPDATE_ENABLED" == "true" ]]; then
     report_unit_status "Auto-update timer" "hosting-panel-update.timer"
@@ -451,16 +505,19 @@ verify_services() {
   report_http_status "Panel przez Gunicorn" "http://127.0.0.1:8000/"
   if [[ "$INSTALL_NGINX" == "true" ]]; then
     report_http_status "Panel przez nginx" "http://127.0.0.1/"
+    report_http_status "phpMyAdmin przez nginx" "http://127.0.0.1/phpmyadmin/"
   fi
 }
 
 print_summary() {
   step "Podsumowanie instalacji"
   local primary_ip
+  local php_fpm_unit
   primary_ip="$(hostname -I | awk '{print $1}')"
   if [[ -z "$primary_ip" ]]; then
     primary_ip="$(ip -4 route get 1.1.1.1 | awk '{print $7; exit}')"
   fi
+  php_fpm_unit="$(detect_php_fpm_unit)"
   local app_url="http://${primary_ip}"
   local admin_password_summary="${ADMIN_PASSWORD}"
   if [[ "$ADMIN_ACCOUNT_PREEXISTED" == "true" && "$ADMIN_PASSWORD_UPDATED" != "true" ]]; then
@@ -472,11 +529,12 @@ ${C_CYAN}${C_BOLD}Adres IP serwera:${C_RESET} ${C_WHITE}${primary_ip}${C_RESET}
 ${C_CYAN}${C_BOLD}Panel publiczny:${C_RESET} ${C_GREEN}${app_url}${C_RESET}
 ${C_CYAN}${C_BOLD}Panel publiczny port 80:${C_RESET} ${C_GREEN}http://${primary_ip}:80${C_RESET}
 ${C_CYAN}${C_BOLD}Panel lokalny Gunicorn:${C_RESET} http://127.0.0.1:8000
+${C_CYAN}${C_BOLD}phpMyAdmin:${C_RESET} ${C_GREEN}http://${primary_ip}/phpmyadmin/${C_RESET}
 ${C_MAGENTA}${C_BOLD}Administrator:${C_RESET} ${ADMIN_USERNAME}
 ${C_MAGENTA}${C_BOLD}Haslo administratora:${C_RESET} ${admin_password_summary}
 ${C_BLUE}${C_BOLD}Plik srodowiskowy:${C_RESET} ${ENV_FILE}
 ${C_BLUE}${C_BOLD}Logi aplikacji:${C_RESET} ${LOG_DIR}
-${C_BLUE}${C_BOLD}Uslugi systemd:${C_RESET} hosting-panel.service, mariadb.service$( [[ "$INSTALL_NGINX" == "true" ]] && printf ', nginx.service' )
+${C_BLUE}${C_BOLD}Uslugi systemd:${C_RESET} hosting-panel.service, mariadb.service, docker.service$( [[ "$INSTALL_NGINX" == "true" ]] && printf ', nginx.service' )$( [[ -n "$php_fpm_unit" ]] && printf ', %s' "$php_fpm_unit" )
 ${C_BLUE}${C_BOLD}Helper hosts:${C_RESET} ${HOSTS_HELPER_TARGET}
 ${C_BLUE}${C_BOLD}Helper SSL:${C_RESET} ${SSL_HELPER_TARGET}
 ${C_BLUE}${C_BOLD}Backupy hosts:${C_RESET} /var/backups/hosting-panel/hosts
@@ -495,6 +553,7 @@ main() {
   install_system_packages
   install_python
   ensure_app_user
+  configure_docker_runtime
   deploy_code
   setup_virtualenv
   configure_database

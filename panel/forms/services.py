@@ -1,5 +1,5 @@
 from flask_wtf import FlaskForm
-from wtforms import BooleanField, DateField, IntegerField, PasswordField, SelectField, StringField, SubmitField, TextAreaField
+from wtforms import BooleanField, DateField, IntegerField, PasswordField, SelectField, SelectMultipleField, StringField, SubmitField, TextAreaField
 from wtforms.validators import DataRequired, Length, NumberRange, Optional
 
 from panel.forms.password_policy import strong_password_validators
@@ -94,6 +94,7 @@ class DatabaseUserForm(FlaskForm):
     username = StringField("Uzytkownik DB", validators=[DataRequired(), Length(max=120)])
     password = PasswordField("Haslo", validators=strong_password_validators(required=False))
     host = StringField("Host", validators=[DataRequired(), Length(max=120)])
+    privileges = SelectMultipleField("Uprawnienia", choices=[], validators=[Optional()])
     status = SelectField("Status", choices=[("active", "Aktywny"), ("disabled", "Wylaczony")], validators=[DataRequired()])
     submit = SubmitField("Zapisz")
 

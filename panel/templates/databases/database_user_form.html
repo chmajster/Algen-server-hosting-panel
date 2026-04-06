@@ -1,4 +1,55 @@
 {% extends "layouts/base.html" %}
 {% block content %}
-<div class="surface-card p-4"><h1 class="h3 mb-2">{{ title }}</h1><p class="text-secondary">Baza: {{ database.name }}</p><form method="post" class="row g-3">{{ form.hidden_tag() }}<div class="col-md-6">{{ form.database_id.label(class="form-label") }}{{ form.database_id(class="form-select") }}</div><div class="col-md-6">{{ form.username.label(class="form-label") }}{{ form.username(class="form-control") }}</div><div class="col-md-4">{{ form.password.label(class="form-label") }}{{ form.password(class="form-control") }}</div><div class="col-md-4">{{ form.host.label(class="form-label") }}{{ form.host(class="form-control") }}</div><div class="col-md-4">{{ form.status.label(class="form-label") }}{{ form.status(class="form-select") }}</div><div class="col-12"><button class="btn btn-primary">{{ form.submit.label.text }}</button></div></form></div>
+<div class="surface-card p-4">
+	<h1 class="h3 mb-2">{{ title }}</h1>
+	<p class="text-secondary">Baza: {{ database.name }}</p>
+
+	<form method="post" class="row g-3">
+		{{ form.hidden_tag() }}
+
+		{% if show_database_field is not defined or show_database_field %}
+			<div class="col-md-6">
+				{{ form.database_id.label(class="form-label") }}
+				{{ form.database_id(class="form-select") }}
+			</div>
+		{% endif %}
+
+		<div class="col-md-6">
+			{{ form.username.label(class="form-label") }}
+			{% if username_prefix %}
+				<div class="input-group">
+					<span class="input-group-text">{{ username_prefix }}</span>
+					{{ form.username(class="form-control") }}
+				</div>
+				<div class="form-text">Pelna nazwa zostanie zapisana jako: {{ username_prefix }}{{ form.username.data or '' }}</div>
+			{% else %}
+				{{ form.username(class="form-control") }}
+			{% endif %}
+		</div>
+
+		<div class="col-md-4">
+			{{ form.password.label(class="form-label") }}
+			{{ form.password(class="form-control", autocomplete="new-password") }}
+			<div class="form-text">Przy edycji pozostaw puste, aby nie zmieniac hasla.</div>
+		</div>
+		<div class="col-md-4">
+			{{ form.host.label(class="form-label") }}
+			{{ form.host(class="form-control") }}
+		</div>
+		<div class="col-md-4">
+			{{ form.status.label(class="form-label") }}
+			{{ form.status(class="form-select") }}
+		</div>
+
+		<div class="col-12">
+			{{ form.privileges.label(class="form-label") }}
+			{{ form.privileges(class="form-select", size="8", multiple=true) }}
+			<div class="form-text">Przytrzymaj Ctrl lub Cmd, aby zaznaczyc wiele uprawnien. Brak wyboru oznacza ALL.</div>
+		</div>
+
+		<div class="col-12">
+			<button class="btn btn-primary">{{ form.submit.label.text }}</button>
+		</div>
+	</form>
+</div>
 {% endblock %}
