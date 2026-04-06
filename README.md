@@ -48,6 +48,45 @@ Jeśli chcesz odtworzyć sam serwis bez pełnej reinstalacji:
 sudo APP_DIR=/opt/hosting-panel APP_USER=hosting-panel APP_GROUP=hosting-panel /opt/hosting-panel/scripts/install_app_service.sh
 ```
 
+## Auto-update z GitHub
+
+Projekt ma teraz wbudowany mechanizm auto-update dla repo:
+
+`https://github.com/chmajster/Algen-server-hosting-panel`
+
+Po instalacji, jeśli `AUTOUPDATE_ENABLED=true`, installer tworzy:
+
+- usługę `hosting-panel-update.service`
+- timer `hosting-panel-update.timer`
+- skrypt aktualizujący `/usr/local/bin/hosting-panel-update`
+
+Mechanizm:
+
+- sprawdza najnowszy commit w repo GitHub
+- pobiera nową wersję do katalogu tymczasowego
+- synchronizuje kod do `/opt/hosting-panel`
+- zachowuje `.env`, `.venv` i `storage/`
+- instaluje zależności z `requirements.txt`
+- uruchamia migracje bazy
+- restartuje `hosting-panel.service`
+
+Przydatne polecenia:
+
+```bash
+sudo systemctl status hosting-panel-update.timer
+sudo systemctl start hosting-panel-update.service
+sudo journalctl -u hosting-panel-update.service -n 100 --no-pager
+```
+
+Zmienne konfiguracyjne:
+
+```env
+AUTOUPDATE_ENABLED=true
+AUTOUPDATE_REPO_URL=https://github.com/chmajster/Algen-server-hosting-panel
+AUTOUPDATE_BRANCH=main
+AUTOUPDATE_INTERVAL=*:0/15
+```
+
 ## Dane startowe
 
 - administrator: `admin`

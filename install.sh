@@ -13,6 +13,10 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9'
 ADMIN_EMAIL="${ADMIN_EMAIL:-admin@example.com}"
 APP_DOMAIN="${APP_DOMAIN:-_}"
 INSTALL_NGINX="${INSTALL_NGINX:-true}"
+AUTOUPDATE_ENABLED="${AUTOUPDATE_ENABLED:-true}"
+AUTOUPDATE_REPO_URL="${AUTOUPDATE_REPO_URL:-https://github.com/chmajster/Algen-server-hosting-panel}"
+AUTOUPDATE_BRANCH="${AUTOUPDATE_BRANCH:-main}"
+AUTOUPDATE_INTERVAL="${AUTOUPDATE_INTERVAL:-*:0/15}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LOG_DIR="/var/log/hosting-panel"
 HOSTS_HELPER_TARGET="/usr/local/bin/hosting-panel-hosts-helper"
@@ -171,6 +175,10 @@ generate_env() {
   set_env_key "HOSTS_ALLOWED_FILE" "/etc/hosts"
   set_env_key "DEFAULT_TIMEZONE" "Europe/Warsaw"
   set_env_key "SESSION_COOKIE_SECURE" "false"
+  set_env_key "AUTOUPDATE_ENABLED" "$AUTOUPDATE_ENABLED"
+  set_env_key "AUTOUPDATE_REPO_URL" "$AUTOUPDATE_REPO_URL"
+  set_env_key "AUTOUPDATE_BRANCH" "$AUTOUPDATE_BRANCH"
+  set_env_key "AUTOUPDATE_INTERVAL" "\"$AUTOUPDATE_INTERVAL\""
   chown "$APP_USER:$APP_GROUP" "$ENV_FILE"
   chmod 640 "$ENV_FILE"
 }
@@ -205,6 +213,25 @@ configure_systemd() {
   /usr/local/bin/hosting-panel-install-service
 }
 
+configure_autoupdate() {
+  if [[ "$AUTOUPDATE_ENABLED" != "true" ]]; then
+    log "Auto-update wyłączony"
+    systemctl disable --now hosting-panel-update.timer >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/hosting-panel-update.service /etc/systemd/system/hosting-panel-update.timer
+    systemctl daemon-reload
+    return 0
+  fi
+
+  log "Konfiguruję auto-update z GitHub"
+  install -o root -g root -m 750 "$APP_DIR/scripts/update_from_github.sh" /usr/local/bin/hosting-panel-update
+  install -o root -g root -m 750 "$APP_DIR/scripts/install_autoupdate_service.sh" /usr/local/bin/hosting-panel-install-autoupdate
+  APP_DIR="$APP_DIR" \
+  APP_USER="$APP_USER" \
+  APP_GROUP="$APP_GROUP" \
+  TIMER_ONCALENDAR="$AUTOUPDATE_INTERVAL" \
+  /usr/local/bin/hosting-panel-install-autoupdate
+}
+
 configure_nginx() {
   [[ "$INSTALL_NGINX" == "true" ]] || return 0
   log "Konfiguruję nginx"
@@ -230,6 +257,9 @@ Logi aplikacji: ${LOG_DIR}
 Usługi systemd: hosting-panel.service, mariadb.service$( [[ "$INSTALL_NGINX" == "true" ]] && printf ', nginx.service' )
 Helper hosts: ${HOSTS_HELPER_TARGET}
 Backupy hosts: /var/backups/hosting-panel/hosts
+Auto-update repo: ${AUTOUPDATE_REPO_URL}
+Auto-update branch: ${AUTOUPDATE_BRANCH}
+Auto-update: $( [[ "$AUTOUPDATE_ENABLED" == "true" ]] && printf 'hosting-panel-update.timer (%s)' "$AUTOUPDATE_INTERVAL" || printf 'wyłączony' )
 EOF
 }
 
@@ -246,6 +276,7 @@ main() {
   install_hosts_helper
   run_migrations_and_seed
   configure_systemd
+  configure_autoupdate
   configure_nginx
   print_summary
 }

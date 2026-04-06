@@ -1,0 +1,13 @@
+[Unit]
+Description=Hosting Panel auto-update from GitHub
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+Environment=APP_DIR=/opt/hosting-panel
+Environment=APP_USER=hosting-panel
+Environment=APP_GROUP=hosting-panel
+ExecStart=/usr/local/bin/hosting-panel-update

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Hosting Panel auto-update periodically
+
+[Timer]
+OnCalendar=*:0/15
+Persistent=true
+Unit=hosting-panel-update.service
+
+[Install]
+WantedBy=timers.target
