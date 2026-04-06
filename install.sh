@@ -4,10 +4,10 @@ set -Eeuo pipefail
 APP_USER="${APP_USER:-hosting-panel}"
 APP_GROUP="${APP_GROUP:-hosting-panel}"
 APP_DIR="${APP_DIR:-/opt/hosting-panel}"
-PYTHON_PACKAGE="${PYTHON_PACKAGE:-python3.14}"
-PYTHON_VENV_PACKAGE="${PYTHON_VENV_PACKAGE:-python3.14-venv}"
-PYTHON_DEV_PACKAGE="${PYTHON_DEV_PACKAGE:-python3.14-dev}"
-PYTHON_BIN="${PYTHON_BIN:-/usr/bin/python3.14}"
+PYTHON_PACKAGE="${PYTHON_PACKAGE:-}"
+PYTHON_VENV_PACKAGE="${PYTHON_VENV_PACKAGE:-}"
+PYTHON_DEV_PACKAGE="${PYTHON_DEV_PACKAGE:-}"
+PYTHON_BIN="${PYTHON_BIN:-}"
 DB_NAME="${DB_NAME:-hosting_panel}"
 DB_USER="${DB_USER:-hosting_panel}"
 DB_PASSWORD="${DB_PASSWORD:-$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 24)}"
@@ -72,18 +72,40 @@ install_system_packages() {
 }
 
 install_python() {
-  log "Instaluję ${PYTHON_PACKAGE} z oficjalnego repozytorium APT systemu Ubuntu"
+  local candidate_pkg candidate_venv candidate_dev candidate_bin resolved_version
 
-  if ! apt-cache show "$PYTHON_PACKAGE" >/dev/null 2>&1; then
-    fail "Pakiet ${PYTHON_PACKAGE} nie jest dostępny w repozytorium tej wersji Ubuntu. Użyj systemu, który udostępnia Python 3.14 w oficjalnym APT."
+  if [[ -n "$PYTHON_PACKAGE" ]] && [[ -n "$PYTHON_VENV_PACKAGE" ]] && [[ -n "$PYTHON_DEV_PACKAGE" ]] && [[ -n "$PYTHON_BIN" ]]; then
+    candidate_pkg="$PYTHON_PACKAGE"
+    candidate_venv="$PYTHON_VENV_PACKAGE"
+    candidate_dev="$PYTHON_DEV_PACKAGE"
+    candidate_bin="$PYTHON_BIN"
+  elif apt-cache show python3.14 >/dev/null 2>&1; then
+    candidate_pkg="python3.14"
+    candidate_venv="python3.14-venv"
+    candidate_dev="python3.14-dev"
+    candidate_bin="/usr/bin/python3.14"
+  else
+    candidate_pkg="python3"
+    candidate_venv="python3-venv"
+    candidate_dev="python3-dev"
+    candidate_bin="/usr/bin/python3"
   fi
 
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    "$PYTHON_PACKAGE" \
-    "$PYTHON_VENV_PACKAGE" \
-    "$PYTHON_DEV_PACKAGE"
+  log "Instaluję ${candidate_pkg} z oficjalnego repozytorium APT systemu Ubuntu"
 
-  [[ -x "$PYTHON_BIN" ]] || fail "Po instalacji nie znaleziono interpretera ${PYTHON_BIN}."
+  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    "$candidate_pkg" \
+    "$candidate_venv" \
+    "$candidate_dev"
+
+  [[ -x "$candidate_bin" ]] || fail "Po instalacji nie znaleziono interpretera ${candidate_bin}."
+
+  PYTHON_PACKAGE="$candidate_pkg"
+  PYTHON_VENV_PACKAGE="$candidate_venv"
+  PYTHON_DEV_PACKAGE="$candidate_dev"
+  PYTHON_BIN="$candidate_bin"
+  resolved_version="$("$PYTHON_BIN" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")')"
+  log "Używany interpreter: ${PYTHON_BIN} (${resolved_version})"
 }
 
 ensure_app_user() {

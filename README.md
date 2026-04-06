@@ -2,7 +2,7 @@
 
 Produkcyjny szkielet panelu do zarządzania hostingiem przez WWW oparty o Flask, SQLAlchemy, MariaDB i Bootstrap 5.
 
-Installer został przebudowany tak, aby używał systemowego `python3.14` z repozytorium APT Ubuntu zamiast kompilacji Pythona ze źródeł.
+Installer został przebudowany tak, aby używał systemowego Pythona z repozytorium APT Ubuntu zamiast kompilacji ze źródeł. Jeśli `python3.14` jest dostępny w oficjalnym repo danej wersji Ubuntu, zostanie użyty; w przeciwnym razie installer przejdzie na domyślne `python3` z tego samego repo.
 
 ## Moduły
 
@@ -34,11 +34,16 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
-Installer oczekuje dostępności pakietów:
+Installer instaluje jeden z wariantów:
 
-- `python3.14`
-- `python3.14-venv`
-- `python3.14-dev`
+- preferowany:
+  - `python3.14`
+  - `python3.14-venv`
+  - `python3.14-dev`
+- fallback z oficjalnego APT Ubuntu:
+  - `python3`
+  - `python3-venv`
+  - `python3-dev`
 
 Installer tworzy i włącza usługę `systemd`, która autostartuje aplikację po restarcie serwera.
 
