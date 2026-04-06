@@ -4,7 +4,10 @@ set -Eeuo pipefail
 APP_USER="${APP_USER:-hosting-panel}"
 APP_GROUP="${APP_GROUP:-hosting-panel}"
 APP_DIR="${APP_DIR:-/opt/hosting-panel}"
-PYTHON_BASE="${PYTHON_BASE:-/opt/python}"
+PYTHON_PACKAGE="${PYTHON_PACKAGE:-python3.14}"
+PYTHON_VENV_PACKAGE="${PYTHON_VENV_PACKAGE:-python3.14-venv}"
+PYTHON_DEV_PACKAGE="${PYTHON_DEV_PACKAGE:-python3.14-dev}"
+PYTHON_BIN="${PYTHON_BIN:-/usr/bin/python3.14}"
 DB_NAME="${DB_NAME:-hosting_panel}"
 DB_USER="${DB_USER:-hosting_panel}"
 DB_PASSWORD="${DB_PASSWORD:-$(openssl rand -base64 24 | tr -dc 'A-Za-z0-9' | head -c 24)}"
@@ -18,6 +21,10 @@ AUTOUPDATE_REPO_URL="${AUTOUPDATE_REPO_URL:-https://github.com/chmajster/Algen-s
 AUTOUPDATE_BRANCH="${AUTOUPDATE_BRANCH:-main}"
 AUTOUPDATE_INTERVAL="${AUTOUPDATE_INTERVAL:-*:0/15}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$SCRIPT_DIR/RELEASE" ]]; then
+  # shellcheck disable=SC1090
+  source "$SCRIPT_DIR/RELEASE"
+fi
 LOG_DIR="/var/log/hosting-panel"
 HOSTS_HELPER_TARGET="/usr/local/bin/hosting-panel-hosts-helper"
 SUDOERS_TARGET="/etc/sudoers.d/hosting-panel-hosts-helper"
@@ -64,37 +71,19 @@ install_system_packages() {
     nginx sudo
 }
 
-resolve_latest_python() {
-  curl -fsSL https://www.python.org/ftp/python/ \
-    | grep -oE '3\.[0-9]+\.[0-9]+/' \
-    | tr -d '/' \
-    | sort -V \
-    | tail -n1
-}
-
 install_python() {
-  local latest_version
-  latest_version="$(resolve_latest_python)"
-  [[ -n "$latest_version" ]] || fail "Nie udało się ustalić najnowszej stabilnej wersji Python 3."
-  PY_PREFIX="$PYTHON_BASE/$latest_version"
-  PYTHON_BIN="$PY_PREFIX/bin/python3"
+  log "Instaluję ${PYTHON_PACKAGE} z oficjalnego repozytorium APT systemu Ubuntu"
 
-  if [[ ! -x "$PYTHON_BIN" ]]; then
-    log "Buduję Python $latest_version z oficjalnego źródła"
-    mkdir -p "$PYTHON_BASE" /usr/local/src
-    local archive="Python-${latest_version}.tar.xz"
-    local src_dir="/usr/local/src/Python-${latest_version}"
-    cd /usr/local/src
-    [[ -f "$archive" ]] || curl -fsSLO "https://www.python.org/ftp/python/${latest_version}/${archive}"
-    rm -rf "$src_dir"
-    tar -xf "$archive"
-    cd "$src_dir"
-    ./configure --prefix="$PY_PREFIX" --enable-optimizations --with-ensurepip=install
-    make -j"$(nproc)"
-    make install
-  else
-    log "Python $latest_version jest już zainstalowany"
+  if ! apt-cache show "$PYTHON_PACKAGE" >/dev/null 2>&1; then
+    fail "Pakiet ${PYTHON_PACKAGE} nie jest dostępny w repozytorium tej wersji Ubuntu. Użyj systemu, który udostępnia Python 3.14 w oficjalnym APT."
   fi
+
+  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    "$PYTHON_PACKAGE" \
+    "$PYTHON_VENV_PACKAGE" \
+    "$PYTHON_DEV_PACKAGE"
+
+  [[ -x "$PYTHON_BIN" ]] || fail "Po instalacji nie znaleziono interpretera ${PYTHON_BIN}."
 }
 
 ensure_app_user() {
@@ -260,6 +249,7 @@ Backupy hosts: /var/backups/hosting-panel/hosts
 Auto-update repo: ${AUTOUPDATE_REPO_URL}
 Auto-update branch: ${AUTOUPDATE_BRANCH}
 Auto-update: $( [[ "$AUTOUPDATE_ENABLED" == "true" ]] && printf 'hosting-panel-update.timer (%s)' "$AUTOUPDATE_INTERVAL" || printf 'wyłączony' )
+Źródło pakietu: ${PACKAGE_NAME:-repo} ${VERSION:-local}
 EOF
 }
 

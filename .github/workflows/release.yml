@@ -1,0 +1,28 @@
+name: Release Package
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build release bundle
+        run: |
+          chmod +x scripts/build_release_bundle.sh
+          VERSION="${GITHUB_REF_NAME}" scripts/build_release_bundle.sh
+
+      - name: Upload GitHub Release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/hosting-panel-release.tar.gz
+          generate_release_notes: true

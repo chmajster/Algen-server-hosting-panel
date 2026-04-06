@@ -2,6 +2,8 @@
 
 Produkcyjny szkielet panelu do zarządzania hostingiem przez WWW oparty o Flask, SQLAlchemy, MariaDB i Bootstrap 5.
 
+Installer został przebudowany tak, aby używał systemowego `python3.14` z repozytorium APT Ubuntu zamiast kompilacji Pythona ze źródeł.
+
 ## Moduły
 
 - panel administratora i klienta
@@ -32,6 +34,12 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
+Installer oczekuje dostępności pakietów:
+
+- `python3.14`
+- `python3.14-venv`
+- `python3.14-dev`
+
 Installer tworzy i włącza usługę `systemd`, która autostartuje aplikację po restarcie serwera.
 
 Najważniejsze polecenia:
@@ -47,6 +55,36 @@ Jeśli chcesz odtworzyć sam serwis bez pełnej reinstalacji:
 ```bash
 sudo APP_DIR=/opt/hosting-panel APP_USER=hosting-panel APP_GROUP=hosting-panel /opt/hosting-panel/scripts/install_app_service.sh
 ```
+
+## Instalacja z GitHub Release
+
+Możesz instalować aplikację bez ręcznego klonowania repozytorium. Bootstrap installer pobiera paczkę release z:
+
+`https://github.com/chmajster/Algen-server-hosting-panel`
+
+Instalacja najnowszego release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-hosting-panel/main/scripts/bootstrap_release_install.sh | sudo bash
+```
+
+Instalacja konkretnego taga release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/chmajster/Algen-server-hosting-panel/main/scripts/bootstrap_release_install.sh | sudo RELEASE_TAG=v1.0.0 bash
+```
+
+Release asset, którego używa bootstrap:
+
+`hosting-panel-release.tar.gz`
+
+Do publikacji release po tagu `v*` służy workflow:
+
+[.github/workflows/release.yml](C:/Users/Chris/Documents/GitHub/Algen-server-hosting-panel/.github/workflows/release.yml)
+
+Paczka release jest budowana przez:
+
+[scripts/build_release_bundle.sh](C:/Users/Chris/Documents/GitHub/Algen-server-hosting-panel/scripts/build_release_bundle.sh)
 
 ## Auto-update z GitHub
 
