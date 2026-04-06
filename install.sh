@@ -21,6 +21,8 @@ AUTOUPDATE_REPO_URL="${AUTOUPDATE_REPO_URL:-https://github.com/chmajster/Algen-s
 AUTOUPDATE_BRANCH="${AUTOUPDATE_BRANCH:-main}"
 AUTOUPDATE_INTERVAL="${AUTOUPDATE_INTERVAL:-*:0/15}"
 ADMIN_ACCOUNT_PREEXISTED="false"
+ADMIN_PASSWORD_EXPLICIT="false"
+ADMIN_PASSWORD_UPDATED="false"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR/RELEASE" ]]; then
   # shellcheck disable=SC1090
@@ -72,7 +74,7 @@ Uzycie:
   ./install.sh [-p HASLO_ADMINA]
 
 Opcje:
-  -p HASLO_ADMINA   Ustawia haslo poczatkowe administratora przy pierwszej instalacji
+  -p HASLO_ADMINA   Ustawia haslo administratora; jesli konto juz istnieje, haslo zostanie zaktualizowane
   -h                Pokazuje te pomoc
 EOF
 }
@@ -118,6 +120,7 @@ parse_args() {
       p)
         [[ -n "$OPTARG" ]] || fail "Argument -p wymaga podania hasla."
         ADMIN_PASSWORD="$OPTARG"
+        ADMIN_PASSWORD_EXPLICIT="true"
         ;;
       h)
         usage
@@ -327,9 +330,18 @@ run_migrations_and_seed() {
   existing_admin_count="$(mariadb --batch --skip-column-names "$DB_NAME" -e "SELECT COUNT(*) FROM users WHERE username='${escaped_admin_username}';" 2>/dev/null || printf '0')"
   if [[ "$existing_admin_count" -gt 0 ]]; then
     ADMIN_ACCOUNT_PREEXISTED="true"
-    warn "Konto administratora ${ADMIN_USERNAME} juz istnieje. Installer zachowa obecne haslo."
+    if [[ "$ADMIN_PASSWORD_EXPLICIT" == "true" ]]; then
+      warn "Konto administratora ${ADMIN_USERNAME} juz istnieje. Haslo zostanie zaktualizowane zgodnie z argumentem -p."
+    else
+      warn "Konto administratora ${ADMIN_USERNAME} juz istnieje. Installer zachowa obecne haslo."
+    fi
   fi
   sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && '$APP_DIR/.venv/bin/flask' --app wsgi:app seed-data --admin-username '$ADMIN_USERNAME' --admin-password '$ADMIN_PASSWORD' --admin-email '$ADMIN_EMAIL'"
+  if [[ "$ADMIN_ACCOUNT_PREEXISTED" == "true" && "$ADMIN_PASSWORD_EXPLICIT" == "true" ]]; then
+    sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && '$APP_DIR/.venv/bin/flask' --app wsgi:app create-admin --username '$ADMIN_USERNAME' --password '$ADMIN_PASSWORD' --email '$ADMIN_EMAIL'"
+    ADMIN_PASSWORD_UPDATED="true"
+    ok "Haslo istniejacego administratora zostalo zaktualizowane przez argument -p"
+  fi
   ok "Migracje i seed zakonczone"
 }
 
@@ -450,7 +462,7 @@ print_summary() {
   fi
   local app_url="http://${primary_ip}"
   local admin_password_summary="${ADMIN_PASSWORD}"
-  if [[ "$ADMIN_ACCOUNT_PREEXISTED" == "true" ]]; then
+  if [[ "$ADMIN_ACCOUNT_PREEXISTED" == "true" && "$ADMIN_PASSWORD_UPDATED" != "true" ]]; then
     admin_password_summary="zachowano istniejace haslo"
   fi
   printf '\n%sInstalacja zakonczona sukcesem%s\n' "${C_GREEN}${C_BOLD}" "${C_RESET}"

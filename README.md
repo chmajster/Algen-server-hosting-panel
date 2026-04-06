@@ -41,8 +41,10 @@ Przyklad z podaniem hasla startowego administratora:
 sudo ./install.sh -p 'TwojeHaslo123!'
 ```
 
+Jesli konto administratora juz istnieje, uruchomienie z `-p` wymusi aktualizacje jego hasla.
+
 Installer ma kolorowy, etapowy output i na końcu pokazuje publiczny adres IP serwera oraz adres panelu na porcie `80`.
-Przy ponownej instalacji, jeśli konto administratora już istnieje, installer nie zmienia jego hasła.
+Przy ponownej instalacji, jeśli konto administratora już istnieje, installer nie zmienia jego hasła bez jawnego użycia argumentu `-p`.
 Logowanie ma osobny limit prób oparty o rzeczywisty adres IP klienta za nginx i zwraca własny widok `429`, zamiast surowej strony biblioteki.
 Po instalacji installer wykonuje też informacyjny test usług i pokazuje, czy `hosting-panel`, `mariadb`, `nginx`, timer auto-update oraz sam panel HTTP odpowiadają poprawnie.
 
