@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from panel.extensions import db
 from panel.models import BillingTransaction, Client, SystemSetting, User
+from panel.seed import seed_defaults
 from panel.services.billing import adjust_balance
 
 
@@ -50,3 +51,18 @@ def test_admin_can_change_css_framework(client, app):
         setting = SystemSetting.query.filter_by(key="ui.css_framework").first()
         assert setting is not None
         assert setting.value == "bulma"
+
+
+def test_seed_preserves_existing_admin_password(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        assert admin is not None
+        assert admin.check_password("Admin123!")
+        seed_defaults(
+            admin_username="admin",
+            admin_password="NewPassword123!",
+            admin_email="admin@test.local",
+        )
+        db.session.refresh(admin)
+        assert admin.check_password("Admin123!")
+        assert not admin.check_password("NewPassword123!")

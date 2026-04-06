@@ -36,6 +36,7 @@ sudo ./install.sh
 ```
 
 Installer ma kolorowy, etapowy output i na końcu pokazuje publiczny adres IP serwera oraz adres panelu na porcie `80`.
+Przy ponownej instalacji, jeśli konto administratora już istnieje, installer nie zmienia jego hasła.
 
 Installer instaluje jeden z wariantów:
 
@@ -161,7 +162,7 @@ AUTOUPDATE_INTERVAL='*:0/15'
 ## Dane startowe
 
 - administrator: `admin`
-- hasło administratora: generowane przez installer albo `ChangeMe123!` w seedzie developerskim
+- hasło administratora: generowane przez installer przy pierwszym utworzeniu albo `ChangeMe123!` w seedzie developerskim
 - klient demo: `client1`
 - hasło klienta demo: `Client123!`
 

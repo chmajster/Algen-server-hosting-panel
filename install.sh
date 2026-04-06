@@ -20,6 +20,7 @@ AUTOUPDATE_ENABLED="${AUTOUPDATE_ENABLED:-true}"
 AUTOUPDATE_REPO_URL="${AUTOUPDATE_REPO_URL:-https://github.com/chmajster/Algen-server-hosting-panel}"
 AUTOUPDATE_BRANCH="${AUTOUPDATE_BRANCH:-main}"
 AUTOUPDATE_INTERVAL="${AUTOUPDATE_INTERVAL:-*:0/15}"
+ADMIN_ACCOUNT_PREEXISTED="false"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -f "$SCRIPT_DIR/RELEASE" ]]; then
   # shellcheck disable=SC1090
@@ -120,6 +121,11 @@ format_env_value() {
   local value="$1"
   value="${value//\'/\'\\\'\'}"
   printf "'%s'" "$value"
+}
+
+sql_escape() {
+  local value="$1"
+  printf "%s" "${value//\'/\'\'}"
 }
 
 install_system_packages() {
@@ -274,6 +280,14 @@ generate_env() {
 run_migrations_and_seed() {
   step "Migracje i dane startowe"
   sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && '$APP_DIR/.venv/bin/flask' --app wsgi:app db upgrade"
+  local escaped_admin_username
+  local existing_admin_count
+  escaped_admin_username="$(sql_escape "$ADMIN_USERNAME")"
+  existing_admin_count="$(mariadb --batch --skip-column-names "$DB_NAME" -e "SELECT COUNT(*) FROM users WHERE username='${escaped_admin_username}';" 2>/dev/null || printf '0')"
+  if [[ "$existing_admin_count" -gt 0 ]]; then
+    ADMIN_ACCOUNT_PREEXISTED="true"
+    warn "Konto administratora ${ADMIN_USERNAME} juz istnieje. Installer zachowa obecne haslo."
+  fi
   sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && '$APP_DIR/.venv/bin/flask' --app wsgi:app seed-data --admin-username '$ADMIN_USERNAME' --admin-password '$ADMIN_PASSWORD' --admin-email '$ADMIN_EMAIL'"
   ok "Migracje i seed zakonczone"
 }
@@ -349,6 +363,10 @@ print_summary() {
     primary_ip="$(ip -4 route get 1.1.1.1 | awk '{print $7; exit}')"
   fi
   local app_url="http://${primary_ip}"
+  local admin_password_summary="${ADMIN_PASSWORD}"
+  if [[ "$ADMIN_ACCOUNT_PREEXISTED" == "true" ]]; then
+    admin_password_summary="zachowano istniejace haslo"
+  fi
   printf '\n%sInstalacja zakonczona sukcesem%s\n' "${C_GREEN}${C_BOLD}" "${C_RESET}"
   cat <<EOF
 ${C_CYAN}${C_BOLD}Adres IP serwera:${C_RESET} ${C_WHITE}${primary_ip}${C_RESET}
@@ -356,7 +374,7 @@ ${C_CYAN}${C_BOLD}Panel publiczny:${C_RESET} ${C_GREEN}${app_url}${C_RESET}
 ${C_CYAN}${C_BOLD}Panel publiczny port 80:${C_RESET} ${C_GREEN}http://${primary_ip}:80${C_RESET}
 ${C_CYAN}${C_BOLD}Panel lokalny Gunicorn:${C_RESET} http://127.0.0.1:8000
 ${C_MAGENTA}${C_BOLD}Administrator:${C_RESET} ${ADMIN_USERNAME}
-${C_MAGENTA}${C_BOLD}Haslo administratora:${C_RESET} ${ADMIN_PASSWORD}
+${C_MAGENTA}${C_BOLD}Haslo administratora:${C_RESET} ${admin_password_summary}
 ${C_BLUE}${C_BOLD}Plik srodowiskowy:${C_RESET} ${ENV_FILE}
 ${C_BLUE}${C_BOLD}Logi aplikacji:${C_RESET} ${LOG_DIR}
 ${C_BLUE}${C_BOLD}Uslugi systemd:${C_RESET} hosting-panel.service, mariadb.service$( [[ "$INSTALL_NGINX" == "true" ]] && printf ', nginx.service' )

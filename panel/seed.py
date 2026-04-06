@@ -45,7 +45,6 @@ def seed_defaults(
         admin.role = roles["administrator"]
         admin.email = admin_email
         admin.status = "active"
-        admin.set_password(admin_password)
 
     if not ServicePlan.query.filter_by(code="starter").first():
         db.session.add(
