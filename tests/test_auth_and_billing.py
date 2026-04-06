@@ -18,6 +18,34 @@ def test_login_success(client):
     assert "Ostatnie logi operacji" in response.get_data(as_text=True)
 
 
+def test_login_get_is_not_rate_limited(client):
+    for _ in range(12):
+        response = client.get("/auth/login")
+        assert response.status_code == 200
+
+
+def test_login_rate_limit_renders_custom_429(app):
+    app.config["LOGIN_RATELIMIT"] = "3 per minute"
+    test_client = app.test_client()
+    for _ in range(3):
+        response = test_client.post(
+            "/auth/login",
+            data={"username": "admin", "password": "wrong-password"},
+            follow_redirects=False,
+        )
+        assert response.status_code in {200, 302}
+
+    blocked = test_client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "wrong-password"},
+        follow_redirects=False,
+    )
+    body = blocked.get_data(as_text=True)
+    assert blocked.status_code == 429
+    assert "Za duzo prob" in body
+    assert "Zbyt wiele prob logowania" in body
+
+
 def test_client_cannot_open_admin_panel(client):
     client.post("/auth/login", data={"username": "client", "password": "Client123!"}, follow_redirects=True)
     response = client.get("/admin/", follow_redirects=False)

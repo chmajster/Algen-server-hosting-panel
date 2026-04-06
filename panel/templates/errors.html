@@ -3,6 +3,9 @@
 <div class="surface-card p-5 text-center">
   <h1 class="display-4">{{ error_code }}</h1>
   <p class="lead">{{ title }}</p>
-  <a href="{{ url_for('auth.login') }}" class="btn btn-primary">Wróć do logowania</a>
+  {% if error_detail %}
+    <p class="text-secondary mb-4">{{ error_detail }}</p>
+  {% endif %}
+  <a href="{{ url_for('auth.login') }}" class="btn btn-primary">Wroc do logowania</a>
 </div>
 {% endblock %}

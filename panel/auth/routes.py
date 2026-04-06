@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy import or_
 
@@ -16,7 +16,11 @@ auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
-@limiter.limit("5/minute")
+@limiter.limit(
+    lambda: current_app.config.get("LOGIN_RATELIMIT", "10 per 10 minutes"),
+    methods=["POST"],
+    error_message="Zbyt wiele prob logowania. Odczekaj chwile i sprobuj ponownie.",
+)
 def login():
     if current_user.is_authenticated:
         return redirect(url_for("admin.dashboard" if current_user.has_role("administrator") else "client.dashboard"))

@@ -42,6 +42,7 @@ class Config:
     DEFAULT_TIMEZONE = os.getenv("DEFAULT_TIMEZONE", "UTC")
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "200/day;50/hour")
     RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
+    LOGIN_RATELIMIT = os.getenv("LOGIN_RATELIMIT", "10 per 10 minutes")
     BILLING_GRACE_DAYS = int(os.getenv("BILLING_GRACE_DAYS", "3"))
     BILLING_AUTO_RESUME = os.getenv("BILLING_AUTO_RESUME", "true").lower() == "true"
     HOSTS_PROTECT_CRITICAL = os.getenv("HOSTS_PROTECT_CRITICAL", "true").lower() == "true"
@@ -50,6 +51,7 @@ class Config:
     SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
     REMEMBER_COOKIE_SECURE = SESSION_COOKIE_SECURE
     WTF_CSRF_TIME_LIMIT = None
+    PROXY_FIX_ENABLED = os.getenv("PROXY_FIX_ENABLED", "true").lower() == "true"
 
 
 class DevelopmentConfig(Config):

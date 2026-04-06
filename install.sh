@@ -267,6 +267,7 @@ generate_env() {
   set_env_key "DEFAULT_TIMEZONE" "Europe/Warsaw"
   set_env_key "RATELIMIT_DEFAULT" "200/day;50/hour"
   set_env_key "RATELIMIT_STORAGE_URI" "memory://"
+  set_env_key "LOGIN_RATELIMIT" "10 per 10 minutes"
   set_env_key "SESSION_COOKIE_SECURE" "false"
   set_env_key "AUTOUPDATE_ENABLED" "$AUTOUPDATE_ENABLED"
   set_env_key "AUTOUPDATE_REPO_URL" "$AUTOUPDATE_REPO_URL"

@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 
 from flask import Flask, redirect, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 from panel.config import config_map
 from panel.extensions import bcrypt, csrf, db, limiter, login_manager, migrate
@@ -18,6 +19,9 @@ def create_app(config_name: str | None = None) -> Flask:
         app.config.from_object(config_map.get(env_name, config_map["development"]))
     app.config["RATELIMIT_STORAGE_URI"] = app.config.get("RATELIMIT_STORAGE_URI", "memory://")
 
+    if app.config.get("PROXY_FIX_ENABLED", True):
+        app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+
     db.init_app(app)
     migrate.init_app(app, db)
     login_manager.init_app(app)
@@ -26,7 +30,7 @@ def create_app(config_name: str | None = None) -> Flask:
     limiter.init_app(app)
 
     login_manager.login_view = "auth.login"
-    login_manager.login_message = "Zaloguj się, aby kontynuować."
+    login_manager.login_message = "Zaloguj sie, aby kontynuowac."
     login_manager.login_message_category = "warning"
 
     register_blueprints(app)
@@ -110,7 +114,7 @@ def register_cli(app: Flask) -> None:
         user = User.query.filter_by(username=username).first()
         email_owner = User.query.filter_by(email=email).first()
         if email_owner is not None and (user is None or email_owner.id != user.id):
-            raise click.ClickException(f"Adres e-mail {email} jest już używany przez innego użytkownika.")
+            raise click.ClickException(f"Adres e-mail {email} jest juz uzywany przez innego uzytkownika.")
         if user is None:
             user = User(
                 role=role,
@@ -127,7 +131,7 @@ def register_cli(app: Flask) -> None:
             user.status = "active"
         user.set_password(password)
         db.session.commit()
-        click.echo(f"Administrator {username} został zapisany.")
+        click.echo(f"Administrator {username} zostal zapisany.")
 
     @app.cli.command("run-billing")
     def run_billing():
@@ -159,13 +163,26 @@ def register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(403)
     def forbidden(error):
-        return render_template("errors.html", title="Brak dostępu", error_code=403), 403
+        return render_template("errors.html", title="Brak dostepu", error_code=403), 403
 
     @app.errorhandler(404)
     def missing(error):
         return render_template("errors.html", title="Nie znaleziono", error_code=404), 404
 
+    @app.errorhandler(429)
+    def rate_limited(error):
+        error_detail = getattr(error, "description", None) or "Zbyt wiele zadan. Sprobuj ponownie za chwile."
+        return (
+            render_template(
+                "errors.html",
+                title="Za duzo prob",
+                error_code=429,
+                error_detail=error_detail,
+            ),
+            429,
+        )
+
     @app.errorhandler(500)
     def internal(error):
         db.session.rollback()
-        return render_template("errors.html", title="Błąd serwera", error_code=500), 500
+        return render_template("errors.html", title="Blad serwera", error_code=500), 500
