@@ -185,4 +185,5 @@ def register_error_handlers(app: Flask) -> None:
     @app.errorhandler(500)
     def internal(error):
         db.session.rollback()
+        app.logger.exception("Unhandled server error on request")
         return render_template("errors.html", title="Blad serwera", error_code=500), 500

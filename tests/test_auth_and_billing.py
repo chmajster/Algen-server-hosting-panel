@@ -18,6 +18,17 @@ def test_login_success(client):
     assert "Ostatnie logi operacji" in response.get_data(as_text=True)
 
 
+def test_admin_dashboard_loads(client):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.get("/admin/")
+    assert response.status_code == 200
+    assert "Ostatnie logi operacji" in response.get_data(as_text=True)
+
+
 def test_login_get_is_not_rate_limited(client):
     for _ in range(12):
         response = client.get("/auth/login")

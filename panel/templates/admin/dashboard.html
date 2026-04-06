@@ -33,11 +33,13 @@
           <tbody>
             {% for log in recent_logs %}
               <tr>
-                <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') if log.created_at else '-' }}</td>
                 <td>{{ log.action }}</td>
                 <td>{{ log.description }}</td>
                 <td>{{ render_status('active' if log.success else 'overdue') }}</td>
               </tr>
+            {% else %}
+              <tr><td colspan="4" class="text-secondary">Brak logow do wyswietlenia.</td></tr>
             {% endfor %}
           </tbody>
         </table>
@@ -57,7 +59,9 @@
       <h5>Ostatnie operacje finansowe</h5>
       <ul class="list-group list-group-flush">
         {% for tx in recent_finance %}
-          <li class="list-group-item px-0">{{ tx.created_at.strftime('%Y-%m-%d') }} | {{ tx.description }} | {{ tx.amount }}</li>
+          <li class="list-group-item px-0">{{ tx.created_at.strftime('%Y-%m-%d') if tx.created_at else '-' }} | {{ tx.description }} | {{ tx.amount }}</li>
+        {% else %}
+          <li class="list-group-item px-0 text-secondary">Brak operacji finansowych.</li>
         {% endfor %}
       </ul>
     </div>
@@ -65,7 +69,9 @@
       <h5>Ostatnie blokady i odblokowania</h5>
       <ul class="list-group list-group-flush">
         {% for item in recent_suspensions %}
-          <li class="list-group-item px-0">{{ item.created_at.strftime('%Y-%m-%d') }} | {{ item.user.username }} | {{ item.old_status }} -> {{ item.new_status }}</li>
+          <li class="list-group-item px-0">{{ item.created_at.strftime('%Y-%m-%d') if item.created_at else '-' }} | {{ item.user.username if item.user else '-' }} | {{ item.old_status or '-' }} -> {{ item.new_status }}</li>
+        {% else %}
+          <li class="list-group-item px-0 text-secondary">Brak zmian statusow.</li>
         {% endfor %}
       </ul>
     </div>

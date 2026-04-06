@@ -5,6 +5,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
 
 from panel.extensions import db
 from panel.forms.admin import AppearanceSettingsForm, BalanceAdjustmentForm, PasswordResetForm, UserForm
@@ -36,27 +37,59 @@ from panel.utils.decorators import roles_required
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 
+def _safe_count(query, default: int = 0) -> int:
+    try:
+        return query.count()
+    except SQLAlchemyError:
+        return default
+
+
+def _safe_scalar(query, default=0):
+    try:
+        value = query.scalar()
+        return default if value is None else value
+    except SQLAlchemyError:
+        return default
+
+
+def _safe_all(query, default=None):
+    if default is None:
+        default = []
+    try:
+        return query.all()
+    except SQLAlchemyError:
+        return default
+
+
 @admin_bp.route("/")
 @login_required
 @roles_required("administrator")
 def dashboard():
-    metrics = collect_server_metrics()
+    try:
+        metrics = collect_server_metrics()
+    except Exception:
+        metrics = []
     stats = {
-        "clients": Client.query.count(),
-        "domains": Domain.query.count(),
-        "subdomains": Subdomain.query.count(),
-        "databases": HostingDatabase.query.count(),
-        "ftp_accounts": FTPAccount.query.count(),
-        "mailboxes": Mailbox.query.count(),
-        "overdue_clients": Client.query.filter_by(billing_status="overdue").count(),
-        "suspended_clients": User.query.filter(User.status.in_(["suspended_financial", "blocked_manual"])).count(),
-        "receivables": db.session.query(func.coalesce(func.sum(-BillingTransaction.amount), 0))
-        .filter(BillingTransaction.amount < 0)
-        .scalar(),
+        "clients": _safe_count(Client.query),
+        "domains": _safe_count(Domain.query),
+        "subdomains": _safe_count(Subdomain.query),
+        "databases": _safe_count(HostingDatabase.query),
+        "ftp_accounts": _safe_count(FTPAccount.query),
+        "mailboxes": _safe_count(Mailbox.query),
+        "overdue_clients": _safe_count(Client.query.filter_by(billing_status="overdue")),
+        "suspended_clients": _safe_count(User.query.filter(User.status.in_(["suspended_financial", "blocked_manual"]))),
+        "receivables": _safe_scalar(
+            db.session.query(func.coalesce(func.sum(-BillingTransaction.amount), 0)).filter(BillingTransaction.amount < 0),
+            0,
+        ),
     }
-    recent_logs = ActivityLog.query.order_by(ActivityLog.created_at.desc()).limit(10).all()
-    recent_finance = BillingTransaction.query.order_by(BillingTransaction.created_at.desc()).limit(10).all()
-    recent_suspensions = UserStatusHistory.query.order_by(UserStatusHistory.created_at.desc()).limit(10).all()
+    recent_logs = _safe_all(ActivityLog.query.order_by(ActivityLog.created_at.desc()).limit(10))
+    recent_finance = _safe_all(BillingTransaction.query.order_by(BillingTransaction.created_at.desc()).limit(10))
+    recent_suspensions = _safe_all(UserStatusHistory.query.order_by(UserStatusHistory.created_at.desc()).limit(10))
+    try:
+        states = service_statuses()
+    except Exception:
+        states = {}
     return render_template(
         "admin/dashboard.html",
         metrics=metrics,
@@ -64,7 +97,7 @@ def dashboard():
         recent_logs=recent_logs,
         recent_finance=recent_finance,
         recent_suspensions=recent_suspensions,
-        service_states=service_statuses(),
+        service_states=states,
     )
 
 
