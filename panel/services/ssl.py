@@ -61,6 +61,8 @@ def bind_certificate_target(cert: SSLCertificate, target_type: str, target) -> N
 
 
 def issue_certificate(cert: SSLCertificate, actor=None) -> SSLCertificate:
+    if cert.provider != "letsencrypt":
+        raise SSLServiceError("Automatyczne generowanie jest dostępne tylko dla providerów Let's Encrypt.")
     target_name = cert.target_name
     document_root = cert.domain.document_root if cert.domain is not None else cert.subdomain.document_root
     result = run_ssl_helper(
@@ -94,6 +96,8 @@ def issue_certificate(cert: SSLCertificate, actor=None) -> SSLCertificate:
 
 
 def renew_certificate(cert: SSLCertificate, actor=None) -> SSLCertificate:
+    if cert.provider != "letsencrypt":
+        raise SSLServiceError("Automatyczne odnawianie jest dostępne tylko dla providerów Let's Encrypt.")
     result = run_ssl_helper({"action": "renew", "hostname": cert.target_name, "provider": cert.provider})
     cert.status = "active"
     cert.valid_until = datetime.utcnow() + timedelta(days=90)
