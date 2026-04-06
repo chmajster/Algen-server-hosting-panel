@@ -51,6 +51,10 @@ def admin_create():
     form = SSLCertificateForm()
     _populate_form(form)
     if form.validate_on_submit():
+        target_type, target, _target_name, _client = resolve_ssl_target(form.target_ref.data)
+        if getattr(target, "ssl_certificate", None) is not None:
+            flash("Dla tej witryny istnieje już certyfikat SSL.", "warning")
+            return redirect(url_for("ssl.admin_edit", cert_id=target.ssl_certificate.id))
         cert = _cert_form_to_model(form, SSLCertificate(metadata_json={}))
         db.session.add(cert)
         db.session.commit()
@@ -124,6 +128,10 @@ def client_create():
     form = SSLCertificateForm()
     _populate_form(form, client.id)
     if form.validate_on_submit():
+        target_type, target, _target_name, _resolved_client = resolve_ssl_target(form.target_ref.data)
+        if getattr(target, "ssl_certificate", None) is not None:
+            flash("Dla tej witryny istnieje już certyfikat SSL.", "warning")
+            return redirect(url_for("ssl.client_edit", cert_id=target.ssl_certificate.id))
         cert = _cert_form_to_model(form, SSLCertificate(metadata_json={}))
         if cert.client_id != client.id:
             flash("Nieprawidłowy wybór witryny.", "danger")

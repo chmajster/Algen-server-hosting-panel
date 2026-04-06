@@ -74,7 +74,13 @@ chown -R "$APP_USER:$APP_GROUP" "$APP_DIR/storage"
 install -o root -g root -m 750 "$APP_DIR/scripts/install_app_service.sh" /usr/local/bin/hosting-panel-install-service
 install -o root -g root -m 750 "$APP_DIR/scripts/install_autoupdate_service.sh" /usr/local/bin/hosting-panel-install-autoupdate
 install -o root -g root -m 750 "$APP_DIR/scripts/hosts_helper.py" /usr/local/bin/hosting-panel-hosts-helper
+install -o root -g root -m 750 "$APP_DIR/scripts/ssl_helper.py" /usr/local/bin/hosting-panel-ssl-helper
 install -o root -g root -m 750 "$APP_DIR/scripts/update_from_github.sh" /usr/local/bin/hosting-panel-update
+cp "$APP_DIR/deploy/hosting-panel-hosts-helper.sudoers" /etc/sudoers.d/hosting-panel-hosts-helper
+cp "$APP_DIR/deploy/hosting-panel-ssl-helper.sudoers" /etc/sudoers.d/hosting-panel-ssl-helper
+chmod 440 /etc/sudoers.d/hosting-panel-hosts-helper /etc/sudoers.d/hosting-panel-ssl-helper
+visudo -cf /etc/sudoers.d/hosting-panel-hosts-helper >> "$LOG_FILE" 2>&1
+visudo -cf /etc/sudoers.d/hosting-panel-ssl-helper >> "$LOG_FILE" 2>&1
 
 log "Instaluję zależności Python"
 sudo -u "$APP_USER" bash -lc "'$APP_DIR/.venv/bin/pip' install -r '$APP_DIR/requirements.txt'" >> "$LOG_FILE" 2>&1
