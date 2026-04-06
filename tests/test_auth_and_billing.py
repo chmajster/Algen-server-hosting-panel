@@ -18,6 +18,27 @@ def test_login_success(client):
     assert "Ostatnie logi operacji" in response.get_data(as_text=True)
 
 
+def test_login_accepts_short_password_input_without_form_validation_error(client):
+    response = client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "1"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "Nieprawid" in response.get_data(as_text=True)
+
+
+def test_login_remember_me_sets_remember_cookie(client):
+    response = client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!", "remember_me": "y"},
+        follow_redirects=False,
+    )
+    cookies = " ".join(response.headers.getlist("Set-Cookie"))
+    assert response.status_code == 302
+    assert "remember_token=" in cookies
+
+
 def test_admin_dashboard_loads(client):
     client.post(
         "/auth/login",

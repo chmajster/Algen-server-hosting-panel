@@ -2,13 +2,15 @@ from flask_wtf import FlaskForm
 from wtforms import BooleanField, EmailField, PasswordField, SelectField, StringField, SubmitField, TextAreaField
 from wtforms.validators import DataRequired, Email, Length, Optional
 
+from panel.forms.password_policy import strong_password_validators
+
 
 class UserForm(FlaskForm):
     username = StringField("Login", validators=[DataRequired(), Length(min=3, max=80)])
     email = EmailField("E-mail", validators=[DataRequired(), Email(), Length(max=255)])
     first_name = StringField("Imie", validators=[DataRequired(), Length(max=120)])
     last_name = StringField("Nazwisko", validators=[DataRequired(), Length(max=120)])
-    password = PasswordField("Haslo", validators=[Optional(), Length(min=8, max=255)])
+    password = PasswordField("Haslo", validators=strong_password_validators(required=False))
     role = SelectField(
         "Rola",
         choices=[("administrator", "Administrator"), ("client", "Klient")],
@@ -33,7 +35,7 @@ class UserForm(FlaskForm):
 
 
 class PasswordResetForm(FlaskForm):
-    password = PasswordField("Nowe haslo", validators=[DataRequired(), Length(min=8, max=255)])
+    password = PasswordField("Nowe haslo", validators=strong_password_validators(required=True))
     submit = SubmitField("Zresetuj haslo")
 
 

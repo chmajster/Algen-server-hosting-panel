@@ -4,7 +4,7 @@
   <div class="col-12 col-md-7 col-lg-5 col-xl-4">
     <div class="surface-card p-4 p-lg-5">
       <h1 class="h3 mb-2">Logowanie</h1>
-      <p class="text-secondary mb-4">Panel zarządzania hostingiem z rozdziałem ról, billingiem i audytem operacji.</p>
+      <p class="text-secondary mb-4">Panel zarzadzania hostingiem z rozdzialem rol, billingiem i audytem operacji.</p>
       <form method="post">
         {{ form.hidden_tag() }}
         <div class="mb-3">
@@ -13,7 +13,11 @@
         </div>
         <div class="mb-3">
           {{ form.password.label(class="form-label") }}
-          {{ form.password(class="form-control", placeholder="Hasło") }}
+          {{ form.password(class="form-control", placeholder="Haslo") }}
+        </div>
+        <div class="mb-4 form-check">
+          {{ form.remember_me(class="form-check-input") }}
+          {{ form.remember_me.label(class="form-check-label") }}
         </div>
         <button class="btn btn-primary w-100">{{ form.submit.label.text }}</button>
       </form>

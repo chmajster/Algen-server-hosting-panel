@@ -36,7 +36,7 @@ def login():
             and user.is_active_account
             and user.status in {"active", "overdue", "suspended_financial"}
         ):
-            login_user(user)
+            login_user(user, remember=form.remember_me.data)
             user.last_login_at = datetime.utcnow()
             user.last_login_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
             log_activity("auth.login", "user", "Udane logowanie", entity_id=user.id, actor=user)
