@@ -8,7 +8,11 @@ from flask import current_app
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    try:
+        fileConfig(config.config_file_name)
+    except KeyError:
+        # Allow migrations to run even if logging sections are minimal or customized.
+        pass
 
 
 def get_engine():
