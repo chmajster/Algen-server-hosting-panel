@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from panel.extensions import db
-from panel.models import BillingTransaction, Client, SystemSetting, User
+from panel.models import BillingTransaction, Client, Domain, Mailbox, SSLCertificate, SystemSetting, User
 from panel.seed import seed_defaults
 from panel.services.billing import adjust_balance
 
@@ -48,6 +48,96 @@ def test_admin_dashboard_loads(client):
     response = client.get("/admin/")
     assert response.status_code == 200
     assert "Ostatnie logi operacji" in response.get_data(as_text=True)
+
+
+def test_admin_mail_page_loads(client):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.get("/admin/mail")
+    assert response.status_code == 200
+    assert "Skrzynki" in response.get_data(as_text=True)
+
+
+def test_admin_can_create_mailbox(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        domain = Domain(
+            client=client_profile,
+            name="example.test",
+            document_root="/var/www/example",
+            php_version="8.3",
+            status="active",
+        )
+        db.session.add(domain)
+        db.session.commit()
+        client_id = client_profile.id
+        domain_id = domain.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        "/admin/mail/mailboxes/new",
+        data={
+            "client_id": client_id,
+            "domain_id": domain_id,
+            "email": "mailbox@example.test",
+            "password": "StrongPass1!",
+            "quota_mb": 1024,
+            "status": "active",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    with app.app_context():
+        mailbox = Mailbox.query.filter_by(email="mailbox@example.test").first()
+        assert mailbox is not None
+
+
+def test_admin_ssl_page_loads(client):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.get("/admin/ssl")
+    assert response.status_code == 200
+    assert "Certyfikaty SSL" in response.get_data(as_text=True)
+
+
+def test_admin_ssl_edit_page_loads_for_domain_certificate(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        domain = Domain(
+            client=client_profile,
+            name="ssl-example.test",
+            document_root="/var/www/ssl-example",
+            php_version="8.3",
+            status="active",
+        )
+        cert = SSLCertificate(
+            domain=domain,
+            common_name="ssl-example.test",
+            provider="manual",
+            status="active",
+        )
+        db.session.add_all([domain, cert])
+        db.session.commit()
+        cert_id = cert.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.get(f"/admin/ssl/{cert_id}/edit")
+    assert response.status_code == 200
+    assert "ssl-example.test" in response.get_data(as_text=True)
 
 
 def test_login_get_is_not_rate_limited(client):

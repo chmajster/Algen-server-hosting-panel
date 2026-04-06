@@ -85,7 +85,18 @@ def _populate_service_form(form: ClientServiceForm):
 @roles_required("administrator")
 def admin_services():
     services = ClientService.query.order_by(ClientService.created_at.desc()).all()
-    return render_template("billing/admin_services.html", services=services)
+    stats = {
+        "total": len(services),
+        "active": sum(1 for service in services if service.status == "active"),
+        "pending": sum(1 for service in services if service.status == "pending_payment"),
+        "suspended": sum(1 for service in services if service.status in {"suspended", "blocked_manual"}),
+        "monthly_revenue": sum(
+            service.recurring_amount
+            for service in services
+            if service.status != "deleted" and service.billing_period == "monthly"
+        ),
+    }
+    return render_template("billing/admin_services.html", services=services, stats=stats)
 
 
 @billing_bp.route("/admin/billing/services/new", methods=["GET", "POST"])

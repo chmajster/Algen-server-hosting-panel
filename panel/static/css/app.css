@@ -79,6 +79,7 @@ a {
 
 .content-wrap {
   max-width: 100%;
+  padding-bottom: 2rem;
 }
 
 .surface-card {
@@ -129,6 +130,125 @@ a {
   margin-top: 1rem;
 }
 
+.page-header {
+  display: block;
+}
+
+.eyebrow {
+  color: var(--panel-accent);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 0.5rem;
+}
+
+.page-title {
+  font-size: clamp(1.8rem, 2vw, 2.45rem);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.page-subtitle {
+  color: var(--panel-muted);
+  max-width: 62rem;
+}
+
+.page-actions {
+  flex-shrink: 0;
+}
+
+.stat-tile {
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-tile::after {
+  content: "";
+  position: absolute;
+  top: -1.25rem;
+  right: -1.25rem;
+  width: 4.75rem;
+  height: 4.75rem;
+  border-radius: 999px;
+  background: rgba(17, 100, 102, 0.08);
+}
+
+.stat-label {
+  color: var(--panel-muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.75rem;
+}
+
+.stat-value {
+  font-size: clamp(1.7rem, 2vw, 2.3rem);
+  font-weight: 700;
+  line-height: 1.05;
+  position: relative;
+  z-index: 1;
+}
+
+.stat-meta {
+  color: var(--panel-muted);
+  margin-top: 0.5rem;
+  position: relative;
+  z-index: 1;
+}
+
+.table-card {
+  overflow: hidden;
+}
+
+.table-card-header {
+  padding: 1.25rem 1.25rem 0;
+}
+
+.table-card .table {
+  margin-top: 0.5rem;
+}
+
+.table-card .table thead th,
+.table-card .table tbody td {
+  padding: 1rem 1.25rem;
+  white-space: nowrap;
+}
+
+.table-card .table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.table-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(17, 100, 102, 0.08);
+  color: var(--panel-accent);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.empty-state {
+  padding: 3rem 1.5rem;
+  text-align: center;
+}
+
+.empty-state-icon {
+  width: 4rem;
+  height: 4rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 1.25rem;
+  background: linear-gradient(135deg, rgba(17, 100, 102, 0.12), rgba(25, 135, 84, 0.12));
+  color: var(--panel-accent);
+  font-size: 2rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
 .offcanvas.sidebar {
   width: min(88vw, 320px);
 }
@@ -140,5 +260,14 @@ a {
 
   .content-wrap {
     padding-top: 1rem !important;
+  }
+
+  .table-card-header {
+    padding: 1rem 1rem 0;
+  }
+
+  .table-card .table thead th,
+  .table-card .table tbody td {
+    padding: 0.9rem 1rem;
   }
 }

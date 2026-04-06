@@ -1,6 +1,107 @@
 {% extends "layouts/base.html" %}
 {% from "partials/status_badge.html" import render_status %}
 {% block content %}
-<div class="d-flex justify-content-between mb-3"><h1 class="h3">Usługi klientów</h1><a class="btn btn-primary" href="{{ url_for('billing.admin_service_create') }}">Nowa usługa</a></div>
-<div class="surface-card p-3"><div class="table-responsive"><table class="table"><thead><tr><th>Klient</th><th>Usługa</th><th>Typ</th><th>Status</th><th>Kwota</th></tr></thead><tbody>{% for service in services %}<tr><td>{{ service.client.user.username }}</td><td>{{ service.name }}</td><td>{{ service.service_type }}</td><td>{{ render_status(service.status) }}</td><td>{{ service.recurring_amount }}</td></tr>{% endfor %}</tbody></table></div></div>
+<section class="page-header mb-4">
+  <div class="d-flex flex-column flex-lg-row align-items-lg-end justify-content-between gap-3">
+    <div>
+      <div class="eyebrow">Billing</div>
+      <h1 class="page-title mb-2">Uslugi klientow</h1>
+      <p class="page-subtitle mb-0">
+        Zarzadzaj aktywnymi uslugami, kontroluj statusy platnosci i szybko dodawaj nowe pozycje do kont klientow.
+      </p>
+    </div>
+    <div class="page-actions">
+      <a class="btn btn-primary btn-lg" href="{{ url_for('billing.admin_service_create') }}">Nowa usluga</a>
+    </div>
+  </div>
+</section>
+
+<section class="row g-3 mb-4">
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="surface-card stat-tile p-3 p-xl-4 h-100">
+      <div class="stat-label">Wszystkie uslugi</div>
+      <div class="stat-value">{{ stats.total }}</div>
+      <div class="stat-meta">Laczna liczba obslugiwanych pozycji</div>
+    </div>
+  </div>
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="surface-card stat-tile p-3 p-xl-4 h-100">
+      <div class="stat-label">Aktywne</div>
+      <div class="stat-value text-success">{{ stats.active }}</div>
+      <div class="stat-meta">Uslugi gotowe do pracy</div>
+    </div>
+  </div>
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="surface-card stat-tile p-3 p-xl-4 h-100">
+      <div class="stat-label">Oczekuja na platnosc</div>
+      <div class="stat-value text-warning">{{ stats.pending }}</div>
+      <div class="stat-meta">Wymagaja reakcji billingowej</div>
+    </div>
+  </div>
+  <div class="col-12 col-sm-6 col-xl-3">
+    <div class="surface-card stat-tile p-3 p-xl-4 h-100">
+      <div class="stat-label">Miesieczny przychod</div>
+      <div class="stat-value">{{ "%.2f"|format(stats.monthly_revenue) }}</div>
+      <div class="stat-meta">Suma aktywnych cykli miesiecznych</div>
+    </div>
+  </div>
+</section>
+
+<section class="surface-card table-card">
+  <div class="table-card-header d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
+    <div>
+      <h2 class="h5 mb-1">Lista uslug</h2>
+      <p class="text-secondary mb-0">Widok wszystkich uslug klientow z najwazniejszymi informacjami operacyjnymi.</p>
+    </div>
+    <div class="small text-secondary">Zawieszone lub zablokowane: {{ stats.suspended }}</div>
+  </div>
+
+  {% if services %}
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Klient</th>
+            <th>Usluga</th>
+            <th>Typ</th>
+            <th>Cykl</th>
+            <th>Status</th>
+            <th>Kwota</th>
+            <th>Start</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for service in services %}
+            <tr>
+              <td>
+                <div class="fw-semibold">{{ service.client.user.full_name or service.client.user.username }}</div>
+                <div class="small text-secondary">{{ service.client.user.username }}</div>
+              </td>
+              <td>
+                <div class="fw-semibold">{{ service.name }}</div>
+                {% if service.plan %}
+                  <div class="small text-secondary">Plan: {{ service.plan.name }}</div>
+                {% endif %}
+              </td>
+              <td><span class="table-pill">{{ service.service_type }}</span></td>
+              <td>{{ service.billing_period }}</td>
+              <td>{{ render_status(service.status) }}</td>
+              <td class="fw-semibold">{{ service.recurring_amount }}</td>
+              <td>{{ service.starts_on.strftime("%Y-%m-%d") if service.starts_on else "-" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="empty-state">
+      <div class="empty-state-icon">+</div>
+      <h3 class="h5 mb-2">Brak uslug klientow</h3>
+      <p class="text-secondary mb-4">
+        Po dodaniu pierwszej uslugi zobaczysz tutaj status rozliczen, typ uslugi i kwote cykliczna.
+      </p>
+      <a class="btn btn-primary" href="{{ url_for('billing.admin_service_create') }}">Dodaj pierwsza usluge</a>
+    </div>
+  {% endif %}
+</section>
 {% endblock %}

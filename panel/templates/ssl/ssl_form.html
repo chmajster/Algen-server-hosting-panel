@@ -1,4 +1,37 @@
 {% extends "layouts/base.html" %}
 {% block content %}
-<div class="surface-card p-4"><h1 class="h3 mb-4">{{ title }}</h1><form method="post" class="row g-3">{{ form.hidden_tag() }}<div class="col-md-6">{{ form.target_ref.label(class="form-label") }}{{ form.target_ref(class="form-select") }}</div><div class="col-md-6">{{ form.provider.label(class="form-label") }}{{ form.provider(class="form-select") }}</div><div class="col-md-4">{{ form.status.label(class="form-label") }}{{ form.status(class="form-select") }}</div><div class="col-md-4 form-check ms-3">{{ form.auto_renew(class="form-check-input") }} {{ form.auto_renew.label(class="form-check-label") }}</div><div class="col-md-6">{{ form.certificate_path.label(class="form-label") }}{{ form.certificate_path(class="form-control") }}</div><div class="col-md-6">{{ form.private_key_path.label(class="form-label") }}{{ form.private_key_path(class="form-control") }}</div><div class="col-12"><button class="btn btn-primary">{{ form.submit.label.text }}</button></div></form></div>
+<div class="surface-card p-4">
+  <h1 class="h3 mb-4">{{ title }}</h1>
+  <form method="post" class="row g-3">
+    {{ form.hidden_tag() }}
+    <div class="col-md-6">
+      {{ form.target_ref.label(class="form-label") }}
+      {{ form.target_ref(class="form-select") }}
+    </div>
+    <div class="col-md-6">
+      {{ form.provider.label(class="form-label") }}
+      {{ form.provider(class="form-select") }}
+    </div>
+    <div class="col-md-4">
+      {{ form.status.label(class="form-label") }}
+      {{ form.status(class="form-select") }}
+    </div>
+    <div class="col-md-4 form-check ms-3">
+      {{ form.auto_renew(class="form-check-input") }}
+      {{ form.auto_renew.label(class="form-check-label") }}
+    </div>
+    <div class="col-md-6">
+      {{ form.certificate_path.label(class="form-label") }}
+      {{ form.certificate_path(class="form-control") }}
+    </div>
+    <div class="col-md-6">
+      {{ form.private_key_path.label(class="form-label") }}
+      {{ form.private_key_path(class="form-control") }}
+    </div>
+    <div class="col-12">
+      <div class="form-text mb-3">Dla providerow manualnych podaj sciezki do certyfikatu i klucza. Dla Let's Encrypt pola moga zostac puste.</div>
+      <button class="btn btn-primary">{{ form.submit.label.text }}</button>
+    </div>
+  </form>
+</div>
 {% endblock %}

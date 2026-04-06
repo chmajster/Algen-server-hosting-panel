@@ -1,7 +1,74 @@
 {% extends "layouts/base.html" %}
 {% block content %}
 <div class="row g-3">
-  <div class="col-12 col-xl-6"><div class="surface-card p-3"><div class="d-flex justify-content-between mb-3"><h1 class="h4 mb-0">Skrzynki</h1><a class="btn btn-sm btn-primary" href="{{ url_for('mail.admin_mailbox_create') }}">Nowa skrzynka</a></div><div class="table-responsive"><table class="table"><thead><tr><th>E-mail</th><th>Klient</th><th>Quota</th><th>Status</th></tr></thead><tbody>{% for mailbox in mailboxes %}<tr><td>{{ mailbox.email }}</td><td>{{ mailbox.client.user.username }}</td><td>{{ mailbox.quota_mb }} MB</td><td>{{ mailbox.status }}</td></tr>{% endfor %}</tbody></table></div></div></div>
-  <div class="col-12 col-xl-6"><div class="surface-card p-3"><div class="d-flex justify-content-between mb-3"><h2 class="h4 mb-0">Aliasy i forwardery</h2><a class="btn btn-sm btn-primary" href="{{ url_for('mail.admin_alias_create') }}">Nowy alias</a></div><div class="table-responsive"><table class="table"><thead><tr><th>Alias</th><th>Cel</th><th>Typ</th></tr></thead><tbody>{% for alias in aliases %}<tr><td>{{ alias.source }}</td><td>{{ alias.destination }}</td><td>{{ alias.alias_type }}</td></tr>{% endfor %}</tbody></table></div></div></div>
+  <div class="col-12 col-xl-6">
+    <div class="surface-card p-3">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h4 mb-0">Skrzynki</h1>
+        <a class="btn btn-sm btn-primary" href="{{ url_for('mail.admin_mailbox_create') }}">Nowa skrzynka</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr><th>E-mail</th><th>Klient</th><th>Quota</th><th>Status</th><th>Akcje</th></tr>
+          </thead>
+          <tbody>
+            {% for mailbox in mailboxes %}
+              <tr>
+                <td>{{ mailbox.email }}</td>
+                <td>{{ mailbox.client.user.username }}</td>
+                <td>{{ mailbox.quota_mb }} MB</td>
+                <td>{{ mailbox.status }}</td>
+                <td class="d-flex gap-2 flex-wrap">
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('mail.admin_mailbox_edit', mailbox_id=mailbox.id) }}">Edytuj</a>
+                  <form method="post" action="{{ url_for('mail.admin_mailbox_delete', mailbox_id=mailbox.id) }}" data-confirm="Usunac skrzynke?">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-outline-danger">Usun</button>
+                  </form>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="5" class="text-secondary">Brak skrzynek.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="surface-card p-3">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h4 mb-0">Aliasy i forwardery</h2>
+        <a class="btn btn-sm btn-primary" href="{{ url_for('mail.admin_alias_create') }}">Nowy alias</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr><th>Alias</th><th>Skrzynka</th><th>Cel</th><th>Typ</th><th>Akcje</th></tr>
+          </thead>
+          <tbody>
+            {% for alias in aliases %}
+              <tr>
+                <td>{{ alias.source }}</td>
+                <td>{{ alias.mailbox.email }}</td>
+                <td>{{ alias.destination }}</td>
+                <td>{{ alias.alias_type }}</td>
+                <td class="d-flex gap-2 flex-wrap">
+                  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('mail.admin_alias_edit', alias_id=alias.id) }}">Edytuj</a>
+                  <form method="post" action="{{ url_for('mail.admin_alias_delete', alias_id=alias.id) }}" data-confirm="Usunac alias?">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-outline-danger">Usun</button>
+                  </form>
+                </td>
+              </tr>
+            {% else %}
+              <tr><td colspan="5" class="text-secondary">Brak aliasow i forwarderow.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
