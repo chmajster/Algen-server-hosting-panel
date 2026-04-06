@@ -1,0 +1,1 @@
+hosting-panel ALL=(root) NOPASSWD: /usr/local/bin/hosting-panel-ssl-helper

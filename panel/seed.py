@@ -14,7 +14,11 @@ from panel.models import (
 )
 
 
-def seed_defaults(admin_username: str = "admin", admin_password: str = "ChangeMe123!") -> User:
+def seed_defaults(
+    admin_username: str = "admin",
+    admin_password: str = "ChangeMe123!",
+    admin_email: str = "admin@example.com",
+) -> User:
     roles = {
         "administrator": Role.query.filter_by(name="administrator").first(),
         "client": Role.query.filter_by(name="client").first(),
@@ -30,13 +34,18 @@ def seed_defaults(admin_username: str = "admin", admin_password: str = "ChangeMe
         admin = User(
             role=roles["administrator"],
             username=admin_username,
-            email="admin@example.com",
+            email=admin_email,
             first_name="System",
             last_name="Administrator",
             status="active",
         )
         admin.set_password(admin_password)
         db.session.add(admin)
+    else:
+        admin.role = roles["administrator"]
+        admin.email = admin_email
+        admin.status = "active"
+        admin.set_password(admin_password)
 
     if not ServicePlan.query.filter_by(code="starter").first():
         db.session.add(

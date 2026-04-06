@@ -34,6 +34,8 @@ Wants=network-online.target
 Type=oneshot
 User=root
 Group=root
+EnvironmentFile=${APP_DIR}/.env
+Environment=ENV_FILE=${APP_DIR}/.env
 Environment=APP_DIR=${APP_DIR}
 Environment=APP_USER=${APP_USER}
 Environment=APP_GROUP=${APP_GROUP}

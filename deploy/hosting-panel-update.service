@@ -7,6 +7,8 @@ Wants=network-online.target
 Type=oneshot
 User=root
 Group=root
+EnvironmentFile=/opt/hosting-panel/.env
+Environment=ENV_FILE=/opt/hosting-panel/.env
 Environment=APP_DIR=/opt/hosting-panel
 Environment=APP_USER=hosting-panel
 Environment=APP_GROUP=hosting-panel

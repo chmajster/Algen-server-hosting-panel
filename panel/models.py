@@ -279,10 +279,16 @@ class Subdomain(TimestampMixin, db.Model):
     document_root = db.Column(db.String(255), nullable=False)
     php_version = db.Column(db.String(16), nullable=False, default="8.3")
     status = db.Column(db.String(32), nullable=False, default="active", index=True)
+    ssl_enabled = db.Column(db.Boolean, nullable=False, default=False)
 
     domain = db.relationship("Domain", back_populates="subdomains")
+    ssl_certificate = db.relationship("SSLCertificate", back_populates="subdomain", uselist=False)
 
     __table_args__ = (UniqueConstraint("domain_id", "name", name="uq_subdomains_domain_name"),)
+
+    @property
+    def full_name(self) -> str:
+        return f"{self.name}.{self.domain.name}"
 
 
 class HostingDatabase(TimestampMixin, db.Model):
@@ -375,9 +381,11 @@ class SSLCertificate(TimestampMixin, db.Model):
     __tablename__ = "ssl_certificates"
 
     id = db.Column(db.Integer, primary_key=True)
-    domain_id = db.Column(db.Integer, db.ForeignKey("domains.id"), unique=True, nullable=False, index=True)
+    domain_id = db.Column(db.Integer, db.ForeignKey("domains.id"), unique=True, nullable=True, index=True)
+    subdomain_id = db.Column(db.Integer, db.ForeignKey("subdomains.id"), unique=True, nullable=True, index=True)
     provider = db.Column(db.String(64), nullable=False, default="letsencrypt")
     status = db.Column(db.String(32), nullable=False, default="pending", index=True)
+    common_name = db.Column(db.String(255), nullable=False, unique=True, index=True)
     valid_from = db.Column(db.DateTime, nullable=True)
     valid_until = db.Column(db.DateTime, nullable=True, index=True)
     auto_renew = db.Column(db.Boolean, nullable=False, default=True)
@@ -386,6 +394,19 @@ class SSLCertificate(TimestampMixin, db.Model):
     metadata_json = db.Column(db.JSON, nullable=True)
 
     domain = db.relationship("Domain", back_populates="ssl_certificate")
+    subdomain = db.relationship("Subdomain", back_populates="ssl_certificate")
+
+    @property
+    def target_name(self) -> str:
+        return self.common_name
+
+    @property
+    def client_id(self) -> int | None:
+        if self.domain is not None:
+            return self.domain.client_id
+        if self.subdomain is not None:
+            return self.subdomain.domain.client_id
+        return None
 
 
 class Mailbox(TimestampMixin, db.Model):

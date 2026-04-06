@@ -127,7 +127,7 @@ Zmienne konfiguracyjne:
 AUTOUPDATE_ENABLED=true
 AUTOUPDATE_REPO_URL=https://github.com/chmajster/Algen-server-hosting-panel
 AUTOUPDATE_BRANCH=main
-AUTOUPDATE_INTERVAL=*:0/15
+AUTOUPDATE_INTERVAL='*:0/15'
 ```
 
 ## Dane startowe

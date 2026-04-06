@@ -15,6 +15,7 @@ from panel.models import (
     Role,
     ServicePlan,
     SSLCertificate,
+    Subdomain,
 )
 
 
@@ -42,6 +43,17 @@ def domain_choices(client_id: int | None = None) -> list[tuple[int, str]]:
     if client_id:
         query = query.filter_by(client_id=client_id)
     return [(domain.id, domain.name) for domain in query.order_by(Domain.name.asc()).all()]
+
+
+def ssl_target_choices(client_id: int | None = None) -> list[tuple[str, str]]:
+    domain_query = Domain.query
+    subdomain_query = Subdomain.query.join(Domain)
+    if client_id:
+        domain_query = domain_query.filter_by(client_id=client_id)
+        subdomain_query = subdomain_query.filter(Domain.client_id == client_id)
+    choices = [(f"domain:{domain.id}", f"Domena: {domain.name}") for domain in domain_query.order_by(Domain.name.asc()).all()]
+    choices.extend((f"subdomain:{sub.id}", f"Subdomena: {sub.full_name}") for sub in subdomain_query.order_by(Subdomain.name.asc()).all())
+    return choices
 
 
 def zone_choices(client_id: int | None = None) -> list[tuple[int, str]]:
@@ -85,6 +97,8 @@ def owned_or_404(model, obj_id: int):
         owner_id = obj.database.client_id
     if owner_id is None and hasattr(obj, "mailbox"):
         owner_id = obj.mailbox.client_id
+    if owner_id is None and hasattr(obj, "subdomain") and obj.subdomain is not None:
+        owner_id = obj.subdomain.domain.client_id
     if owner_id != client.id:
         abort(404)
     return obj

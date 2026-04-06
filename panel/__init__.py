@@ -86,8 +86,13 @@ def register_cli(app: Flask) -> None:
     @app.cli.command("seed-data")
     @click.option("--admin-username", default="admin")
     @click.option("--admin-password", default="ChangeMe123!")
-    def seed_data(admin_username: str, admin_password: str):
-        seed_defaults(admin_username=admin_username, admin_password=admin_password)
+    @click.option("--admin-email", default="admin@example.com")
+    def seed_data(admin_username: str, admin_password: str, admin_email: str):
+        seed_defaults(
+            admin_username=admin_username,
+            admin_password=admin_password,
+            admin_email=admin_email,
+        )
         click.echo("Dane startowe utworzone.")
 
     @app.cli.command("create-admin")
@@ -102,18 +107,27 @@ def register_cli(app: Flask) -> None:
             role = Role(name="administrator", description="Administrator")
             db.session.add(role)
             db.session.flush()
-        user = User(
-            role=role,
-            username=username,
-            email=email,
-            first_name="Admin",
-            last_name="User",
-            status="active",
-        )
+        user = User.query.filter_by(username=username).first()
+        email_owner = User.query.filter_by(email=email).first()
+        if email_owner is not None and (user is None or email_owner.id != user.id):
+            raise click.ClickException(f"Adres e-mail {email} jest już używany przez innego użytkownika.")
+        if user is None:
+            user = User(
+                role=role,
+                username=username,
+                email=email,
+                first_name="Admin",
+                last_name="User",
+                status="active",
+            )
+            db.session.add(user)
+        else:
+            user.role = role
+            user.email = email
+            user.status = "active"
         user.set_password(password)
-        db.session.add(user)
         db.session.commit()
-        click.echo(f"Administrator {username} został utworzony.")
+        click.echo(f"Administrator {username} został zapisany.")
 
     @app.cli.command("run-billing")
     def run_billing():

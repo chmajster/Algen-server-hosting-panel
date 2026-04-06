@@ -25,9 +25,6 @@ fail() {
 [[ "${EUID}" -eq 0 ]] || fail "Skrypt update musi być uruchamiany jako root."
 [[ -f "$ENV_FILE" ]] || fail "Brak pliku środowiskowego: $ENV_FILE"
 
-# shellcheck disable=SC1090
-source "$ENV_FILE"
-
 mkdir -p "$STATE_DIR" "$WORK_DIR"
 LOCK_FILE="$STATE_DIR/update.lock"
 LAST_COMMIT_FILE="$STATE_DIR/last_commit"
@@ -74,11 +71,37 @@ chown -R "$APP_USER:$APP_GROUP" "$APP_DIR"
 mkdir -p "$APP_DIR/storage/uploads" "$APP_DIR/storage/backups" "$APP_DIR/storage/autoupdate"
 chown -R "$APP_USER:$APP_GROUP" "$APP_DIR/storage"
 
+install -o root -g root -m 750 "$APP_DIR/scripts/install_app_service.sh" /usr/local/bin/hosting-panel-install-service
+install -o root -g root -m 750 "$APP_DIR/scripts/install_autoupdate_service.sh" /usr/local/bin/hosting-panel-install-autoupdate
+install -o root -g root -m 750 "$APP_DIR/scripts/hosts_helper.py" /usr/local/bin/hosting-panel-hosts-helper
+install -o root -g root -m 750 "$APP_DIR/scripts/update_from_github.sh" /usr/local/bin/hosting-panel-update
+
 log "Instaluję zależności Python"
 sudo -u "$APP_USER" bash -lc "'$APP_DIR/.venv/bin/pip' install -r '$APP_DIR/requirements.txt'" >> "$LOG_FILE" 2>&1
 
 log "Uruchamiam migracje bazy"
-sudo -u "$APP_USER" bash -lc "source '$ENV_FILE'; FLASK_APP=wsgi:app '$APP_DIR/.venv/bin/flask' db upgrade" >> "$LOG_FILE" 2>&1
+sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && '$APP_DIR/.venv/bin/flask' --app wsgi:app db upgrade" >> "$LOG_FILE" 2>&1
+
+log "Odświeżam definicje usług"
+APP_DIR="$APP_DIR" \
+APP_USER="$APP_USER" \
+APP_GROUP="$APP_GROUP" \
+ENV_FILE="$ENV_FILE" \
+GUNICORN_BIN="$APP_DIR/.venv/bin/gunicorn" \
+/usr/local/bin/hosting-panel-install-service >> "$LOG_FILE" 2>&1
+
+TIMER_ONCALENDAR="$(
+  grep '^AUTOUPDATE_INTERVAL=' "$ENV_FILE" 2>/dev/null \
+    | tail -n1 \
+    | cut -d= -f2- \
+    | sed -e "s/^'//" -e "s/'$//"
+)"
+TIMER_ONCALENDAR="${TIMER_ONCALENDAR:-*:0/15}"
+APP_DIR="$APP_DIR" \
+APP_USER="$APP_USER" \
+APP_GROUP="$APP_GROUP" \
+TIMER_ONCALENDAR="$TIMER_ONCALENDAR" \
+/usr/local/bin/hosting-panel-install-autoupdate >> "$LOG_FILE" 2>&1
 
 echo "$remote_commit" > "$LAST_COMMIT_FILE"
 chown "$APP_USER:$APP_GROUP" "$LAST_COMMIT_FILE"

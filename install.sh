@@ -60,15 +60,26 @@ backup_file() {
   fi
 }
 
+format_env_value() {
+  local value="$1"
+  value="${value//\'/\'\\\'\'}"
+  printf "'%s'" "$value"
+}
+
 install_system_packages() {
   log "Instaluję pakiety systemowe"
   apt-get update
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  local packages=(
     build-essential curl wget git rsync ca-certificates pkg-config openssl \
     libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
     libffi-dev libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev \
     liblzma-dev libgdbm-dev uuid-dev libmariadb-dev mariadb-server mariadb-client \
-    nginx sudo
+    sudo
+  )
+  if [[ "$INSTALL_NGINX" == "true" ]]; then
+    packages+=(nginx)
+  fi
+  DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
 }
 
 install_python() {
@@ -122,6 +133,7 @@ deploy_code() {
   mkdir -p "$APP_DIR"
   rsync -a --delete \
     --exclude '.git' \
+    --exclude '.env' \
     --exclude '.venv' \
     --exclude '__pycache__' \
     --exclude '.pytest_cache' \
@@ -156,10 +168,12 @@ SQL
 set_env_key() {
   local key="$1"
   local value="$2"
+  local formatted_value
+  formatted_value="$(format_env_value "$value")"
   if grep -q "^${key}=" "$ENV_FILE"; then
-    sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+    sed -i "s|^${key}=.*|${key}=${formatted_value}|" "$ENV_FILE"
   else
-    echo "${key}=${value}" >> "$ENV_FILE"
+    echo "${key}=${formatted_value}" >> "$ENV_FILE"
   fi
 }
 
@@ -172,7 +186,7 @@ generate_env() {
     backup_file "$ENV_FILE"
   fi
   set_env_key "APP_ENV" "production"
-  set_env_key "APP_NAME" "\"Hosting Panel\""
+  set_env_key "APP_NAME" "Hosting Panel"
   set_env_key "APP_HOST" "127.0.0.1"
   set_env_key "APP_PORT" "8000"
   set_env_key "PREFERRED_URL_SCHEME" "http"
@@ -185,21 +199,21 @@ generate_env() {
   set_env_key "HOSTS_SUDO_BIN" "/usr/bin/sudo"
   set_env_key "HOSTS_ALLOWED_FILE" "/etc/hosts"
   set_env_key "DEFAULT_TIMEZONE" "Europe/Warsaw"
+  set_env_key "RATELIMIT_DEFAULT" "200/day;50/hour"
+  set_env_key "RATELIMIT_STORAGE_URI" "memory://"
   set_env_key "SESSION_COOKIE_SECURE" "false"
   set_env_key "AUTOUPDATE_ENABLED" "$AUTOUPDATE_ENABLED"
   set_env_key "AUTOUPDATE_REPO_URL" "$AUTOUPDATE_REPO_URL"
   set_env_key "AUTOUPDATE_BRANCH" "$AUTOUPDATE_BRANCH"
-  set_env_key "AUTOUPDATE_INTERVAL" "\"$AUTOUPDATE_INTERVAL\""
+  set_env_key "AUTOUPDATE_INTERVAL" "$AUTOUPDATE_INTERVAL"
   chown "$APP_USER:$APP_GROUP" "$ENV_FILE"
   chmod 640 "$ENV_FILE"
 }
 
 run_migrations_and_seed() {
   log "Uruchamiam migracje i seed danych"
-  cd "$APP_DIR"
-  sudo -u "$APP_USER" bash -lc "source '$ENV_FILE'; FLASK_APP=wsgi:app '$APP_DIR/.venv/bin/flask' db upgrade"
-  sudo -u "$APP_USER" bash -lc "source '$ENV_FILE'; FLASK_APP=wsgi:app '$APP_DIR/.venv/bin/flask' seed-data --admin-username '$ADMIN_USERNAME' --admin-password '$ADMIN_PASSWORD'"
-  sudo -u "$APP_USER" bash -lc "source '$ENV_FILE'; FLASK_APP=wsgi:app '$APP_DIR/.venv/bin/flask' create-admin --username '$ADMIN_USERNAME' --password '$ADMIN_PASSWORD' --email '$ADMIN_EMAIL' || true"
+  sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && '$APP_DIR/.venv/bin/flask' --app wsgi:app db upgrade"
+  sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && '$APP_DIR/.venv/bin/flask' --app wsgi:app seed-data --admin-username '$ADMIN_USERNAME' --admin-password '$ADMIN_PASSWORD' --admin-email '$ADMIN_EMAIL'"
 }
 
 install_hosts_helper() {

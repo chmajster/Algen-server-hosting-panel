@@ -127,7 +127,7 @@ class DNSRecordForm(FlaskForm):
 
 
 class SSLCertificateForm(FlaskForm):
-    domain_id = SelectField("Domena", coerce=int, validators=[DataRequired()])
+    target_ref = SelectField("Witryna", validators=[DataRequired()])
     provider = SelectField("Provider", choices=[("letsencrypt", "Let's Encrypt"), ("manual", "Manual")], validators=[DataRequired()])
     status = SelectField("Status", choices=[("pending", "Oczekuje"), ("active", "Aktywny"), ("expired", "Wygasły")], validators=[DataRequired()])
     auto_renew = BooleanField("Automatyczne odnawianie", default=True)

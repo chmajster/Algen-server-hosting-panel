@@ -37,6 +37,8 @@ class Config:
     )
     HOSTS_SUDO_BIN = os.getenv("HOSTS_SUDO_BIN", "/usr/bin/sudo")
     HOSTS_ALLOWED_FILE = os.getenv("HOSTS_ALLOWED_FILE", "/etc/hosts")
+    SSL_HELPER_PATH = os.getenv("SSL_HELPER_PATH", "/usr/local/bin/hosting-panel-ssl-helper")
+    LETSENCRYPT_EMAIL = os.getenv("LETSENCRYPT_EMAIL", "admin@example.com")
     DEFAULT_TIMEZONE = os.getenv("DEFAULT_TIMEZONE", "UTC")
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "200/day;50/hour")
     RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
