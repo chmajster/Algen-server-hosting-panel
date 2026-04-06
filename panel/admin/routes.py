@@ -7,7 +7,7 @@ from flask_login import current_user, login_required
 from sqlalchemy import func
 
 from panel.extensions import db
-from panel.forms.admin import BalanceAdjustmentForm, PasswordResetForm, UserForm
+from panel.forms.admin import AppearanceSettingsForm, BalanceAdjustmentForm, PasswordResetForm, UserForm
 from panel.models import (
     ActivityLog,
     BillingTransaction,
@@ -24,6 +24,12 @@ from panel.models import (
 from panel.services.audit import log_activity
 from panel.services.billing import adjust_balance, ensure_client_balance
 from panel.services.monitoring import collect_server_metrics, service_statuses
+from panel.services.settings import (
+    CSS_FRAMEWORK_SETTING_KEY,
+    css_framework_choices,
+    get_css_framework_key,
+    set_setting,
+)
 from panel.utils.decorators import roles_required
 
 
@@ -199,3 +205,29 @@ def client_balance(client_id: int):
         return redirect(url_for("admin.client_balance", client_id=client.id))
     transactions = BillingTransaction.query.filter_by(client_id=client.id).order_by(BillingTransaction.created_at.desc()).all()
     return render_template("admin/client_balance.html", form=form, client=client, transactions=transactions)
+
+
+@admin_bp.route("/settings", methods=["GET", "POST"])
+@login_required
+@roles_required("administrator")
+def settings():
+    form = AppearanceSettingsForm()
+    form.css_framework.choices = css_framework_choices()
+    if request.method == "GET":
+        form.css_framework.data = get_css_framework_key()
+    if form.validate_on_submit():
+        set_setting(
+            CSS_FRAMEWORK_SETTING_KEY,
+            form.css_framework.data,
+            "Wybrany framework CSS panelu",
+        )
+        log_activity(
+            "admin.settings_update",
+            "system_setting",
+            f"Zmieniono framework CSS panelu na {form.css_framework.data}",
+            entity_id=CSS_FRAMEWORK_SETTING_KEY,
+        )
+        db.session.commit()
+        flash("Ustawienia wygladu zostaly zapisane.", "success")
+        return redirect(url_for("admin.settings"))
+    return render_template("admin/settings.html", form=form, title="Ustawienia")

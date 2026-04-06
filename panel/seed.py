@@ -52,7 +52,7 @@ def seed_defaults(
             ServicePlan(
                 name="Starter Hosting",
                 code="starter",
-                description="Domyślny plan startowy",
+                description="Domyslny plan startowy",
                 monthly_price=Decimal("49.00"),
                 daily_price=Decimal("2.00"),
                 yearly_price=Decimal("490.00"),
@@ -66,14 +66,19 @@ def seed_defaults(
             )
         )
 
-    if not SystemSetting.query.filter_by(key="billing.auto_resume").first():
-        db.session.add(
-            SystemSetting(
-                key="billing.auto_resume",
-                value="true",
-                description="Automatyczne wznawianie usług po doładowaniu salda",
+    default_settings = {
+        "billing.auto_resume": "Automatyczne wznawianie uslug po doladowaniu salda",
+        "ui.css_framework": "Aktywny framework CSS panelu",
+    }
+    for key, description in default_settings.items():
+        if not SystemSetting.query.filter_by(key=key).first():
+            db.session.add(
+                SystemSetting(
+                    key=key,
+                    value="true" if key == "billing.auto_resume" else "bootstrap",
+                    description=description,
+                )
             )
-        )
 
     client_user = User.query.filter_by(username="client1").first()
     if client_user is None:

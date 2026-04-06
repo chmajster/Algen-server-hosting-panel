@@ -3,7 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 
 from panel.extensions import db
-from panel.models import BillingTransaction, Client, User
+from panel.models import BillingTransaction, Client, SystemSetting, User
 from panel.services.billing import adjust_balance
 
 
@@ -32,3 +32,21 @@ def test_balance_adjustment_creates_transaction(app):
         tx = BillingTransaction.query.order_by(BillingTransaction.id.desc()).first()
         assert tx.amount == Decimal("25.00")
         assert client_profile.balance.balance == Decimal("75.00")
+
+
+def test_admin_can_change_css_framework(client, app):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        "/admin/settings",
+        data={"css_framework": "bulma"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    with app.app_context():
+        setting = SystemSetting.query.filter_by(key="ui.css_framework").first()
+        assert setting is not None
+        assert setting.value == "bulma"

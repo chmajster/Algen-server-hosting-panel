@@ -1,20 +1,36 @@
 :root {
   --panel-bg: #f4f7fb;
+  --panel-bg-top: #f8fafc;
+  --panel-bg-accent: rgba(17, 100, 102, 0.08);
   --panel-surface: #ffffff;
   --panel-border: rgba(15, 23, 42, 0.08);
   --panel-text: #132238;
   --panel-muted: #61738a;
   --panel-accent: #116466;
   --panel-accent-2: #198754;
+  --panel-sidebar-start: #12324a;
+  --panel-sidebar-mid: #173b54;
+  --panel-sidebar-end: #0f2738;
+  --panel-surface-radius: 1rem;
+  --panel-surface-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  --bs-primary: var(--panel-accent);
+  --bs-secondary: #4f6377;
+  --bs-body-color: var(--panel-text);
+  --bs-body-bg: transparent;
+  --bs-border-color: var(--panel-border);
 }
 
 body {
   background:
-    radial-gradient(circle at top right, rgba(17, 100, 102, 0.08), transparent 30%),
-    linear-gradient(180deg, #f8fafc 0%, var(--panel-bg) 100%);
+    radial-gradient(circle at top right, var(--panel-bg-accent), transparent 30%),
+    linear-gradient(180deg, var(--panel-bg-top) 0%, var(--panel-bg) 100%);
   color: var(--panel-text);
   min-height: 100vh;
   margin: 0;
+}
+
+a {
+  color: var(--panel-accent);
 }
 
 .app-shell {
@@ -22,7 +38,12 @@ body {
 }
 
 .sidebar {
-  background: linear-gradient(180deg, #12324a 0%, #173b54 60%, #0f2738 100%);
+  background: linear-gradient(
+    180deg,
+    var(--panel-sidebar-start) 0%,
+    var(--panel-sidebar-mid) 60%,
+    var(--panel-sidebar-end) 100%
+  );
   width: 280px;
   min-height: 100vh;
   position: sticky;
@@ -41,12 +62,15 @@ body {
   border-radius: 0.8rem;
   margin-bottom: 0.25rem;
   padding: 0.7rem 0.85rem;
+  text-decoration: none;
+  transition: background-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
 }
 
 .sidebar .nav-link.active,
 .sidebar .nav-link:hover {
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
+  transform: translateX(2px);
 }
 
 .app-main {
@@ -60,14 +84,14 @@ body {
 .surface-card {
   background: var(--panel-surface);
   border: 1px solid var(--panel-border);
-  border-radius: 1rem;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  border-radius: var(--panel-surface-radius);
+  box-shadow: var(--panel-surface-shadow);
   overflow: hidden;
 }
 
 .metric-card {
   border: 0;
-  border-radius: 1rem;
+  border-radius: var(--panel-surface-radius);
   background: linear-gradient(180deg, #fff 0%, #f8fbff 100%);
 }
 
@@ -87,6 +111,10 @@ body {
   z-index: 100;
 }
 
+.topbar .badge {
+  border-radius: 999px;
+}
+
 .status-pill {
   border-radius: 999px;
   padding: 0.3rem 0.65rem;
@@ -99,6 +127,10 @@ body {
 
 .surface-card + .surface-card {
   margin-top: 1rem;
+}
+
+.offcanvas.sidebar {
+  width: min(88vw, 320px);
 }
 
 @media (max-width: 991.98px) {

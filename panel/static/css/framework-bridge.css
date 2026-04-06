@@ -1,0 +1,175 @@
+body.framework-bootstrap {
+  --panel-accent: #116466;
+  --panel-accent-2: #198754;
+  --panel-bg: #f4f7fb;
+  --panel-bg-top: #f8fafc;
+  --panel-bg-accent: rgba(17, 100, 102, 0.08);
+  --panel-sidebar-start: #12324a;
+  --panel-sidebar-mid: #173b54;
+  --panel-sidebar-end: #0f2738;
+  --panel-surface-radius: 1rem;
+  --panel-surface-shadow: 0 12px 30px rgba(15, 23, 42, 0.06);
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+body.framework-tailwind {
+  --panel-accent: #0f766e;
+  --panel-accent-2: #2563eb;
+  --panel-bg: #ecfeff;
+  --panel-bg-top: #f8fafc;
+  --panel-bg-accent: rgba(14, 165, 233, 0.12);
+  --panel-sidebar-start: #0f172a;
+  --panel-sidebar-mid: #0f766e;
+  --panel-sidebar-end: #164e63;
+  --panel-surface-radius: 1.25rem;
+  --panel-surface-shadow: 0 18px 44px rgba(8, 47, 73, 0.14);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+body.framework-bulma {
+  --panel-accent: #485fc7;
+  --panel-accent-2: #00a896;
+  --panel-bg: #f8f7ff;
+  --panel-bg-top: #ffffff;
+  --panel-bg-accent: rgba(72, 95, 199, 0.1);
+  --panel-sidebar-start: #2a2f45;
+  --panel-sidebar-mid: #485fc7;
+  --panel-sidebar-end: #23335b;
+  --panel-surface-radius: 1.25rem;
+  --panel-surface-shadow: 0 18px 40px rgba(72, 95, 199, 0.12);
+  font-family: BlinkMacSystemFont, -apple-system, "Segoe UI", sans-serif;
+}
+
+body.framework-foundation {
+  --panel-accent: #1779ba;
+  --panel-accent-2: #3adb76;
+  --panel-bg: #f3f5f7;
+  --panel-bg-top: #ffffff;
+  --panel-bg-accent: rgba(23, 121, 186, 0.1);
+  --panel-sidebar-start: #1f2d3d;
+  --panel-sidebar-mid: #284b63;
+  --panel-sidebar-end: #102030;
+  --panel-surface-radius: 0.75rem;
+  --panel-surface-shadow: 0 10px 24px rgba(31, 45, 61, 0.1);
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+}
+
+body.framework-materialize {
+  --panel-accent: #ff6f00;
+  --panel-accent-2: #00897b;
+  --panel-bg: #fff8ef;
+  --panel-bg-top: #fffdf8;
+  --panel-bg-accent: rgba(255, 111, 0, 0.12);
+  --panel-sidebar-start: #4e342e;
+  --panel-sidebar-mid: #ff6f00;
+  --panel-sidebar-end: #6d4c41;
+  --panel-surface-radius: 0.85rem;
+  --panel-surface-shadow: 0 16px 36px rgba(255, 111, 0, 0.14);
+  font-family: Roboto, "Segoe UI", sans-serif;
+}
+
+body.framework-uikit {
+  --panel-accent: #1e87f0;
+  --panel-accent-2: #32d296;
+  --panel-bg: #f3f8fd;
+  --panel-bg-top: #ffffff;
+  --panel-bg-accent: rgba(30, 135, 240, 0.1);
+  --panel-sidebar-start: #1e2a38;
+  --panel-sidebar-mid: #1e87f0;
+  --panel-sidebar-end: #183153;
+  --panel-surface-radius: 1.1rem;
+  --panel-surface-shadow: 0 16px 38px rgba(30, 135, 240, 0.12);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body.framework-skeleton {
+  --panel-accent: #33c3f0;
+  --panel-accent-2: #5c6ac4;
+  --panel-bg: #f7fbfd;
+  --panel-bg-top: #ffffff;
+  --panel-bg-accent: rgba(51, 195, 240, 0.1);
+  --panel-sidebar-start: #293241;
+  --panel-sidebar-mid: #33c3f0;
+  --panel-sidebar-end: #3d5a80;
+  --panel-surface-radius: 0.6rem;
+  --panel-surface-shadow: 0 12px 24px rgba(41, 50, 65, 0.12);
+  font-family: "Raleway", "Segoe UI", sans-serif;
+}
+
+body.framework-purecss {
+  --panel-accent: #0078e7;
+  --panel-accent-2: #2d3e50;
+  --panel-bg: #f4f8fb;
+  --panel-bg-top: #ffffff;
+  --panel-bg-accent: rgba(0, 120, 231, 0.1);
+  --panel-sidebar-start: #1f3142;
+  --panel-sidebar-mid: #0078e7;
+  --panel-sidebar-end: #2d3e50;
+  --panel-surface-radius: 0.75rem;
+  --panel-surface-shadow: 0 10px 22px rgba(45, 62, 80, 0.12);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+body.framework-milligram {
+  --panel-accent: #9b4dca;
+  --panel-accent-2: #45b7aa;
+  --panel-bg: #faf7fd;
+  --panel-bg-top: #ffffff;
+  --panel-bg-accent: rgba(155, 77, 202, 0.1);
+  --panel-sidebar-start: #2f243a;
+  --panel-sidebar-mid: #9b4dca;
+  --panel-sidebar-end: #4f3b78;
+  --panel-surface-radius: 0.9rem;
+  --panel-surface-shadow: 0 16px 32px rgba(79, 59, 120, 0.12);
+  font-family: "Roboto", "Helvetica Neue", Arial, sans-serif;
+}
+
+body[class*="framework-"] .btn-primary {
+  --bs-btn-bg: var(--panel-accent);
+  --bs-btn-border-color: var(--panel-accent);
+  --bs-btn-hover-bg: var(--panel-accent-2);
+  --bs-btn-hover-border-color: var(--panel-accent-2);
+  --bs-btn-active-bg: var(--panel-accent-2);
+  --bs-btn-active-border-color: var(--panel-accent-2);
+}
+
+body[class*="framework-"] .btn-outline-secondary {
+  --bs-btn-color: var(--panel-muted);
+  --bs-btn-border-color: rgba(15, 23, 42, 0.18);
+  --bs-btn-hover-bg: rgba(15, 23, 42, 0.06);
+  --bs-btn-hover-color: var(--panel-text);
+  --bs-btn-hover-border-color: rgba(15, 23, 42, 0.24);
+}
+
+body[class*="framework-"] .card,
+body[class*="framework-"] .modal-content,
+body[class*="framework-"] .dropdown-menu,
+body[class*="framework-"] .offcanvas,
+body[class*="framework-"] .form-control,
+body[class*="framework-"] .form-select,
+body[class*="framework-"] .input-group-text,
+body[class*="framework-"] .table,
+body[class*="framework-"] .list-group-item {
+  border-color: var(--panel-border);
+}
+
+body[class*="framework-"] .surface-card,
+body[class*="framework-"] .metric-card,
+body[class*="framework-"] .form-control,
+body[class*="framework-"] .form-select,
+body[class*="framework-"] .btn,
+body[class*="framework-"] .dropdown-menu,
+body[class*="framework-"] .offcanvas,
+body[class*="framework-"] .modal-content {
+  border-radius: var(--panel-surface-radius);
+}
+
+body[class*="framework-"] .table > :not(caption) > * > * {
+  background-color: transparent;
+}
+
+body[class*="framework-"] .badge.text-bg-light {
+  background: rgba(255, 255, 255, 0.92);
+  border-left: 3px solid var(--panel-accent);
+  color: var(--panel-text) !important;
+}

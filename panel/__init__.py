@@ -137,12 +137,20 @@ def register_cli(app: Flask) -> None:
 
 
 def register_context(app: Flask) -> None:
+    from sqlalchemy.exc import SQLAlchemyError
+
     from panel.models import ActivityLog
+    from panel.services.settings import get_css_framework_config
 
     @app.context_processor
     def inject_globals():
+        try:
+            recent_logs = ActivityLog.query.order_by(ActivityLog.created_at.desc()).limit(5).all()
+        except SQLAlchemyError:
+            recent_logs = []
         return {
-            "recent_logs": ActivityLog.query.order_by(ActivityLog.created_at.desc()).limit(5).all(),
+            "recent_logs": recent_logs,
+            "ui_framework": get_css_framework_config(),
         }
 
 

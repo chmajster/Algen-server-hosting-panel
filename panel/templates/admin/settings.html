@@ -1,0 +1,49 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-12 col-xl-8">
+    <div class="surface-card p-4">
+      <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-start gap-3 mb-4">
+        <div>
+          <h3 class="mb-1">Ustawienia wygladu</h3>
+          <p class="text-secondary mb-0">
+            Wybierz framework CSS, ktory ma nadac panelowi inny styl wizualny.
+          </p>
+        </div>
+        <span class="badge text-bg-light border">Aktywny: {{ ui_framework.label }}</span>
+      </div>
+
+      <form method="post" class="row g-3">
+        {{ form.hidden_tag() }}
+        <div class="col-12">
+          <label class="form-label" for="{{ form.css_framework.id }}">{{ form.css_framework.label.text }}</label>
+          {{ form.css_framework(class="form-select") }}
+          <div class="form-text">
+            Panel zachowuje kompatybilnosc z obecnym markupem i doklada wybrany framework jako warstwe wizualna.
+          </div>
+        </div>
+        <div class="col-12">
+          {{ form.submit(class="btn btn-primary") }}
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-4">
+    <div class="surface-card p-4">
+      <h5 class="mb-3">Podglad aktywnego motywu</h5>
+      <div class="mb-3">
+        <div class="fw-semibold">{{ ui_framework.label }}</div>
+        <div class="text-secondary small">{{ ui_framework.description }}</div>
+      </div>
+      <div class="d-grid gap-2">
+        <button type="button" class="btn btn-primary">Przycisk glowny</button>
+        <button type="button" class="btn btn-outline-secondary">Przycisk pomocniczy</button>
+        <div class="alert alert-info mb-0">
+          Zmiana jest globalna i obejmuje panel administratora oraz panel klienta.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
