@@ -1,0 +1,19 @@
+{% macro render_status(status) -%}
+  {% set color_map = {
+    'active': 'success',
+    'current': 'success',
+    'charged': 'success',
+    'pending': 'warning',
+    'pending_payment': 'warning',
+    'scheduled': 'info',
+    'queued': 'info',
+    'overdue': 'danger',
+    'suspended': 'danger',
+    'suspended_financial': 'danger',
+    'blocked_manual': 'dark',
+    'disabled': 'secondary',
+    'inactive': 'secondary',
+    'expired': 'secondary'
+  } %}
+  <span class="badge text-bg-{{ color_map.get(status, 'secondary') }}">{{ status }}</span>
+{%- endmacro %}

@@ -1,0 +1,35 @@
+{% extends "layouts/base.html" %}
+{% from "partials/status_badge.html" import render_status %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Użytkownicy</h1>
+  <a href="{{ url_for('admin.user_create') }}" class="btn btn-primary">Nowy użytkownik</a>
+</div>
+<div class="surface-card p-3">
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead><tr><th>Login</th><th>Rola</th><th>Status</th><th>E-mail</th><th>Akcje</th></tr></thead>
+      <tbody>
+        {% for user in users %}
+          <tr>
+            <td>{{ user.username }}</td>
+            <td>{{ user.role.name }}</td>
+            <td>{{ render_status(user.status) }}</td>
+            <td>{{ user.email }}</td>
+            <td class="d-flex gap-2 flex-wrap">
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.user_edit', user_id=user.id) }}">Edytuj</a>
+              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('admin.user_password', user_id=user.id) }}">Hasło</a>
+              {% if user.client_profile %}
+                <a class="btn btn-sm btn-outline-success" href="{{ url_for('admin.client_balance', client_id=user.client_profile.id) }}">Saldo</a>
+              {% endif %}
+              <form method="post" action="{{ url_for('admin.user_delete', user_id=user.id) }}" data-confirm="Usunąć użytkownika?">
+                <button class="btn btn-sm btn-outline-danger">Usuń</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

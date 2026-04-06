@@ -1,0 +1,45 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-12 col-xl-5">
+    <div class="surface-card p-3 mb-3">
+      <h1 class="h4">Zmień `/etc/hosts`</h1>
+      <form method="post" class="row g-3">
+        {{ form.hidden_tag() }}
+        <input type="hidden" name="action_name" value="add">
+        <div class="col-md-6">{{ form.ip_address.label(class="form-label") }}{{ form.ip_address(class="form-control") }}</div>
+        <div class="col-md-6">{{ form.hostname.label(class="form-label") }}{{ form.hostname(class="form-control") }}</div>
+        <div class="col-md-6">{{ form.previous_value.label(class="form-label") }}{{ form.previous_value(class="form-control") }}</div>
+        <div class="col-md-12 form-check ms-3">{{ form.confirm_critical(class="form-check-input") }} {{ form.confirm_critical.label(class="form-check-label") }}</div>
+        <div class="col-12 d-flex gap-2 flex-wrap">
+          <button class="btn btn-primary" name="action_name" value="add">Dodaj</button>
+          <button class="btn btn-outline-secondary" name="action_name" value="update">Edytuj</button>
+          <button class="btn btn-outline-danger" name="action_name" value="delete">Usuń</button>
+        </div>
+      </form>
+    </div>
+    <div class="surface-card p-3">
+      <h2 class="h5">Przywróć backup</h2>
+      <form method="post" action="{{ url_for('hosts.restore') }}">
+        {{ restore_form.hidden_tag() }}
+        <div class="mb-3">{{ restore_form.backup_name(class="form-control", placeholder="nazwa backupu") }}</div>
+        <button class="btn btn-outline-warning">{{ restore_form.submit.label.text }}</button>
+      </form>
+    </div>
+  </div>
+  <div class="col-12 col-xl-7">
+    <div class="surface-card p-3 mb-3">
+      <h2 class="h5">Aktualna zawartość</h2>
+      <div class="table-responsive"><table class="table"><thead><tr><th>IP</th><th>Hostnames</th></tr></thead><tbody>{% for row in current_hosts %}<tr><td>{{ row.ip }}</td><td>{{ row.hostnames|join(', ') }}</td></tr>{% endfor %}</tbody></table></div>
+    </div>
+    <div class="surface-card p-3 mb-3">
+      <h2 class="h5">Backupy</h2>
+      <ul class="list-group list-group-flush">{% for backup in backups %}<li class="list-group-item px-0">{{ backup.backup_name }} | {{ backup.created_at.strftime('%Y-%m-%d %H:%M') }} | {{ backup.created_by.username if backup.created_by else '-' }}</li>{% endfor %}</ul>
+    </div>
+    <div class="surface-card p-3">
+      <h2 class="h5">Historia zmian</h2>
+      <ul class="list-group list-group-flush">{% for change in changes %}<li class="list-group-item px-0">{{ change.created_at.strftime('%Y-%m-%d %H:%M') }} | {{ change.action }} | {{ change.hostname }} | {{ change.message }}</li>{% endfor %}</ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "layouts/base.html" %}
+{% from "partials/status_badge.html" import render_status %}
+{% block content %}
+<div class="row g-3 mb-4">
+  <div class="col-12 col-md-6 col-xl-3"><div class="surface-card p-3"><div class="text-secondary">Saldo</div><div class="h3">{{ client.balance.balance }} {{ client.balance.currency }}</div></div></div>
+  <div class="col-12 col-md-6 col-xl-3"><div class="surface-card p-3"><div class="text-secondary">Status rozliczeń</div><div class="h3">{{ render_status(client.billing_status) }}</div></div></div>
+  <div class="col-12 col-md-6 col-xl-3"><div class="surface-card p-3"><div class="text-secondary">Aktywne usługi</div><div class="h3">{{ client.services|length }}</div></div></div>
+  <div class="col-12 col-md-6 col-xl-3"><div class="surface-card p-3"><div class="text-secondary">Domeny / DB / FTP / Mail</div><div class="h5 mb-0">{{ client.domains|length }} / {{ client.databases|length }} / {{ client.ftp_accounts|length }} / {{ client.mailboxes|length }}</div></div></div>
+</div>
+{% if client.billing_status == 'overdue' %}
+  <div class="alert alert-danger">Twoje konto ma zaległości. Usługi mogą być ograniczone do czasu uregulowania salda.</div>
+{% endif %}
+<div class="row g-3">
+  <div class="col-12 col-lg-6">
+    <div class="surface-card p-3">
+      <h5>Aktywne usługi</h5>
+      <ul class="list-group list-group-flush">
+        {% for service in client.services %}
+          <li class="list-group-item px-0 d-flex justify-content-between">
+            <span>{{ service.name }}</span>
+            {{ render_status(service.status) }}
+          </li>
+        {% else %}
+          <li class="list-group-item px-0">Brak usług.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="surface-card p-3">
+      <h5>Ostatnie operacje</h5>
+      <ul class="list-group list-group-flush">
+        {% for tx in recent_transactions %}
+          <li class="list-group-item px-0">{{ tx.created_at.strftime('%Y-%m-%d') }} | {{ tx.description }} | {{ tx.amount }}</li>
+        {% else %}
+          <li class="list-group-item px-0">Brak operacji.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

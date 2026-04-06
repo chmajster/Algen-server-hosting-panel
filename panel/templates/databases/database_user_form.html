@@ -1,0 +1,4 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-4"><h1 class="h3 mb-2">{{ title }}</h1><p class="text-secondary">Baza: {{ database.name }}</p><form method="post" class="row g-3">{{ form.hidden_tag() }}<div class="col-md-6">{{ form.database_id.label(class="form-label") }}{{ form.database_id(class="form-select") }}</div><div class="col-md-6">{{ form.username.label(class="form-label") }}{{ form.username(class="form-control") }}</div><div class="col-md-4">{{ form.password.label(class="form-label") }}{{ form.password(class="form-control") }}</div><div class="col-md-4">{{ form.host.label(class="form-label") }}{{ form.host(class="form-control") }}</div><div class="col-md-4">{{ form.status.label(class="form-label") }}{{ form.status(class="form-select") }}</div><div class="col-12"><button class="btn btn-primary">{{ form.submit.label.text }}</button></div></form></div>
+{% endblock %}

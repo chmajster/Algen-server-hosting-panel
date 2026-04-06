@@ -1,0 +1,6 @@
+{% extends "layouts/base.html" %}
+{% from "partials/status_badge.html" import render_status %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3"><h1 class="h3">Usługi klientów</h1><a class="btn btn-primary" href="{{ url_for('billing.admin_service_create') }}">Nowa usługa</a></div>
+<div class="surface-card p-3"><div class="table-responsive"><table class="table"><thead><tr><th>Klient</th><th>Usługa</th><th>Typ</th><th>Status</th><th>Kwota</th></tr></thead><tbody>{% for service in services %}<tr><td>{{ service.client.user.username }}</td><td>{{ service.name }}</td><td>{{ service.service_type }}</td><td>{{ render_status(service.status) }}</td><td>{{ service.recurring_amount }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

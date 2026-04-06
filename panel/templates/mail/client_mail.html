@@ -1,0 +1,4 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-3"><h1 class="h3 mb-3">Moja poczta</h1><div class="table-responsive"><table class="table"><thead><tr><th>E-mail</th><th>Quota</th><th>Status</th><th></th></tr></thead><tbody>{% for mailbox in client.mailboxes %}<tr><td>{{ mailbox.email }}</td><td>{{ mailbox.quota_mb }} MB</td><td>{{ mailbox.status }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('mail.client_mailbox_edit', mailbox_id=mailbox.id) }}">Edytuj</a></td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

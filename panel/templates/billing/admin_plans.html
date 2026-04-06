@@ -1,0 +1,5 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3"><h1 class="h3">Plany usług</h1><a class="btn btn-primary" href="{{ url_for('billing.admin_plan_create') }}">Nowy plan</a></div>
+<div class="surface-card p-3"><div class="table-responsive"><table class="table"><thead><tr><th>Nazwa</th><th>Kod</th><th>Miesięcznie</th><th>Rocznie</th><th></th></tr></thead><tbody>{% for plan in plans %}<tr><td>{{ plan.name }}</td><td>{{ plan.code }}</td><td>{{ plan.monthly_price }}</td><td>{{ plan.yearly_price }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('billing.admin_plan_edit', plan_id=plan.id) }}">Edytuj</a></td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

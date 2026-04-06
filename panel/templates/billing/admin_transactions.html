@@ -1,0 +1,4 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-3"><h1 class="h3 mb-3">Transakcje billingowe</h1><div class="table-responsive"><table class="table"><thead><tr><th>Data</th><th>Klient</th><th>Typ</th><th>Opis</th><th>Kwota</th></tr></thead><tbody>{% for tx in transactions %}<tr><td>{{ tx.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ tx.client.user.username }}</td><td>{{ tx.transaction_type }}</td><td>{{ tx.description }}</td><td>{{ tx.amount }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

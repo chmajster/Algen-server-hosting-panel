@@ -1,0 +1,70 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-12 col-xl-8">
+    <div class="surface-card p-3">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h1 class="h3 mb-0">Menedżer plików</h1>
+        <span class="badge text-bg-light border">{{ current_path or '/' }}</span>
+      </div>
+      <div class="table-responsive">
+        <table class="table">
+          <thead><tr><th>Nazwa</th><th>Typ</th><th>Rozmiar</th><th>Akcje</th></tr></thead>
+          <tbody>
+            {% for item in items %}
+              <tr>
+                <td>{% if item.is_dir %}<a href="{{ url_for('files.manager', path=item.path) }}">{{ item.name }}</a>{% else %}{{ item.name }}{% endif %}</td>
+                <td>{{ 'folder' if item.is_dir else 'plik' }}</td>
+                <td>{{ item.size }}</td>
+                <td>
+                  <form method="post" action="{{ url_for('files.delete') }}" class="d-inline" data-confirm="Usunąć element?">
+                    <input type="hidden" name="path" value="{{ item.path }}">
+                    <button class="btn btn-sm btn-outline-danger">Usuń</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-xl-4">
+    <div class="surface-card p-3 mb-3">
+      <h2 class="h5">Upload</h2>
+      <form method="post" action="{{ url_for('files.upload') }}" enctype="multipart/form-data">
+        {{ upload_form.hidden_tag() }}
+        {{ upload_form.target_dir(type="hidden") }}
+        <div class="mb-3">{{ upload_form.file(class="form-control") }}</div>
+        <button class="btn btn-primary w-100">{{ upload_form.submit.label.text }}</button>
+      </form>
+    </div>
+    <div class="surface-card p-3 mb-3">
+      <h2 class="h5">Nowy folder</h2>
+      <form method="post" action="{{ url_for('files.folder') }}">
+        {{ folder_form.hidden_tag() }}
+        <div class="mb-3">{{ folder_form.path(class="form-control", placeholder="folder/nazwa") }}</div>
+        <button class="btn btn-outline-primary w-100">{{ folder_form.submit.label.text }}</button>
+      </form>
+    </div>
+    <div class="surface-card p-3 mb-3">
+      <h2 class="h5">Zmień nazwę / przenieś</h2>
+      <form method="post" action="{{ url_for('files.rename') }}">
+        {{ rename_form.hidden_tag() }}
+        <div class="mb-3">{{ rename_form.source(class="form-control", placeholder="źródło") }}</div>
+        <div class="mb-3">{{ rename_form.destination(class="form-control", placeholder="cel") }}</div>
+        <button class="btn btn-outline-secondary w-100">{{ rename_form.submit.label.text }}</button>
+      </form>
+    </div>
+    <div class="surface-card p-3">
+      <h2 class="h5">Zapisz plik tekstowy</h2>
+      <form method="post" action="{{ url_for('files.save_text') }}">
+        {{ text_form.hidden_tag() }}
+        <div class="mb-3">{{ text_form.path(class="form-control", placeholder="ścieżka/pliku.txt") }}</div>
+        <div class="mb-3">{{ text_form.content(class="form-control", rows="6") }}</div>
+        <button class="btn btn-outline-success w-100">{{ text_form.submit.label.text }}</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

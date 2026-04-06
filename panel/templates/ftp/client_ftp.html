@@ -1,0 +1,4 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-3"><h1 class="h3 mb-3">Moje konta FTP</h1><div class="table-responsive"><table class="table"><thead><tr><th>Login</th><th>Home</th><th>Aktywne</th><th></th></tr></thead><tbody>{% for account in accounts %}<tr><td>{{ account.username }}</td><td>{{ account.home_directory }}</td><td>{{ account.is_active }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('ftp.client_edit', account_id=account.id) }}">Edytuj</a></td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

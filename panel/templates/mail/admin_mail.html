@@ -1,0 +1,7 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-12 col-xl-6"><div class="surface-card p-3"><div class="d-flex justify-content-between mb-3"><h1 class="h4 mb-0">Skrzynki</h1><a class="btn btn-sm btn-primary" href="{{ url_for('mail.admin_mailbox_create') }}">Nowa skrzynka</a></div><div class="table-responsive"><table class="table"><thead><tr><th>E-mail</th><th>Klient</th><th>Quota</th><th>Status</th></tr></thead><tbody>{% for mailbox in mailboxes %}<tr><td>{{ mailbox.email }}</td><td>{{ mailbox.client.user.username }}</td><td>{{ mailbox.quota_mb }} MB</td><td>{{ mailbox.status }}</td></tr>{% endfor %}</tbody></table></div></div></div>
+  <div class="col-12 col-xl-6"><div class="surface-card p-3"><div class="d-flex justify-content-between mb-3"><h2 class="h4 mb-0">Aliasy i forwardery</h2><a class="btn btn-sm btn-primary" href="{{ url_for('mail.admin_alias_create') }}">Nowy alias</a></div><div class="table-responsive"><table class="table"><thead><tr><th>Alias</th><th>Cel</th><th>Typ</th></tr></thead><tbody>{% for alias in aliases %}<tr><td>{{ alias.source }}</td><td>{{ alias.destination }}</td><td>{{ alias.alias_type }}</td></tr>{% endfor %}</tbody></table></div></div></div>
+</div>
+{% endblock %}

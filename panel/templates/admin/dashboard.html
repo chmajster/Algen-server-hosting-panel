@@ -1,0 +1,74 @@
+{% extends "layouts/base.html" %}
+{% from "partials/status_badge.html" import render_status %}
+{% block content %}
+<div class="row g-3 mb-4">
+  {% for metric in metrics %}
+    <div class="col-12 col-md-4">
+      <div class="card metric-card surface-card h-100">
+        <div class="card-body">
+          <div class="text-secondary">{{ metric.label }}</div>
+          <div class="display-6 fw-semibold">{{ metric.value }}{{ metric.unit }}</div>
+        </div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+<div class="row g-3 mb-4">
+  {% for key, value in stats.items() %}
+    <div class="col-6 col-xl-3">
+      <div class="surface-card p-3 h-100">
+        <div class="text-secondary small">{{ key.replace('_', ' ').title() }}</div>
+        <div class="h3 mb-0">{{ value }}</div>
+      </div>
+    </div>
+  {% endfor %}
+</div>
+<div class="row g-3">
+  <div class="col-12 col-xl-7">
+    <div class="surface-card p-3">
+      <h5>Ostatnie logi operacji</h5>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Data</th><th>Akcja</th><th>Opis</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for log in recent_logs %}
+              <tr>
+                <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                <td>{{ log.action }}</td>
+                <td>{{ log.description }}</td>
+                <td>{{ render_status('active' if log.success else 'overdue') }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-xl-5">
+    <div class="surface-card p-3 mb-3">
+      <h5>Status usług</h5>
+      <div class="d-flex flex-wrap gap-2">
+        {% for service_name, state in service_states.items() %}
+          <span class="badge text-bg-light border">{{ service_name }}: {{ state }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="surface-card p-3 mb-3">
+      <h5>Ostatnie operacje finansowe</h5>
+      <ul class="list-group list-group-flush">
+        {% for tx in recent_finance %}
+          <li class="list-group-item px-0">{{ tx.created_at.strftime('%Y-%m-%d') }} | {{ tx.description }} | {{ tx.amount }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="surface-card p-3">
+      <h5>Ostatnie blokady i odblokowania</h5>
+      <ul class="list-group list-group-flush">
+        {% for item in recent_suspensions %}
+          <li class="list-group-item px-0">{{ item.created_at.strftime('%Y-%m-%d') }} | {{ item.user.username }} | {{ item.old_status }} -> {{ item.new_status }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,5 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3"><h1 class="h3">Certyfikaty SSL</h1><a class="btn btn-primary" href="{{ url_for('ssl.admin_create') }}">Nowy certyfikat</a></div>
+<div class="surface-card p-3"><div class="table-responsive"><table class="table"><thead><tr><th>Domena</th><th>Provider</th><th>Status</th><th>Ważny do</th></tr></thead><tbody>{% for cert in certificates %}<tr><td>{{ cert.domain.name }}</td><td>{{ cert.provider }}</td><td>{{ cert.status }}</td><td>{{ cert.valid_until.strftime('%Y-%m-%d') if cert.valid_until else '-' }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

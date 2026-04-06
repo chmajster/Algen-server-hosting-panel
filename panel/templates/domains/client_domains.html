@@ -1,0 +1,5 @@
+{% extends "layouts/base.html" %}
+{% from "partials/status_badge.html" import render_status %}
+{% block content %}
+<div class="surface-card p-3"><h1 class="h3 mb-3">Moje domeny</h1><div class="table-responsive"><table class="table"><thead><tr><th>Domena</th><th>Root</th><th>PHP</th><th>Status</th><th></th></tr></thead><tbody>{% for domain in domains %}<tr><td>{{ domain.name }}</td><td>{{ domain.document_root }}</td><td>{{ domain.php_version }}</td><td>{{ render_status(domain.status) }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('domains.client_domain_edit', domain_id=domain.id) }}">Edytuj</a></td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

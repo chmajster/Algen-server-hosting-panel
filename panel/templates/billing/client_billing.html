@@ -1,0 +1,9 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-4"><div class="surface-card p-3"><div class="text-secondary">Saldo</div><div class="h3">{{ client.balance.balance }} {{ client.balance.currency }}</div></div></div>
+  <div class="col-12 col-md-4"><div class="surface-card p-3"><div class="text-secondary">Status</div><div class="h3">{{ client.billing_status }}</div></div></div>
+  <div class="col-12 col-md-4"><div class="surface-card p-3"><div class="text-secondary">Historia</div><div class="h3">{{ transactions|length }}</div></div></div>
+</div>
+<div class="surface-card p-3"><div class="table-responsive"><table class="table"><thead><tr><th>Data</th><th>Typ</th><th>Opis</th><th>Kwota</th><th>Saldo po</th></tr></thead><tbody>{% for tx in transactions %}<tr><td>{{ tx.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ tx.transaction_type }}</td><td>{{ tx.description }}</td><td>{{ tx.amount }}</td><td>{{ tx.balance_after }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

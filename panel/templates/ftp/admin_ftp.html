@@ -1,0 +1,5 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3"><h1 class="h3">Konta FTP</h1><a class="btn btn-primary" href="{{ url_for('ftp.admin_create') }}">Nowe konto FTP</a></div>
+<div class="surface-card p-3"><div class="table-responsive"><table class="table"><thead><tr><th>Login</th><th>Klient</th><th>Home</th><th>Aktywne</th></tr></thead><tbody>{% for account in accounts %}<tr><td>{{ account.username }}</td><td>{{ account.client.user.username }}</td><td>{{ account.home_directory }}</td><td>{{ account.is_active }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

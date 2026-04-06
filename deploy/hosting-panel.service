@@ -1,0 +1,22 @@
+[Unit]
+Description=Hosting Panel Flask application
+After=network-online.target mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=hosting-panel
+Group=hosting-panel
+WorkingDirectory=/opt/hosting-panel
+EnvironmentFile=/opt/hosting-panel/.env
+ExecStart=/opt/hosting-panel/.venv/bin/gunicorn -c /opt/hosting-panel/deploy/gunicorn.conf.py wsgi:app
+Restart=always
+RestartSec=5
+TimeoutStartSec=60
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=full
+ReadWritePaths=/opt/hosting-panel/storage /var/log/hosting-panel
+
+[Install]
+WantedBy=multi-user.target

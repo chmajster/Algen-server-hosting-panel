@@ -1,0 +1,4 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-3"><h1 class="h3 mb-3">Moje bazy danych</h1><div class="table-responsive"><table class="table"><thead><tr><th>Nazwa</th><th>Engine</th><th>Charset</th><th>Status</th><th></th></tr></thead><tbody>{% for database in databases %}<tr><td>{{ database.name }}</td><td>{{ database.engine }}</td><td>{{ database.charset }}</td><td>{{ database.status }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('databases.client_database_edit', database_id=database.id) }}">Edytuj</a></td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

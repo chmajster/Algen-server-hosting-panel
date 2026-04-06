@@ -1,0 +1,8 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-5 text-center">
+  <h1 class="display-4">{{ error_code }}</h1>
+  <p class="lead">{{ title }}</p>
+  <a href="{{ url_for('auth.login') }}" class="btn btn-primary">Wróć do logowania</a>
+</div>
+{% endblock %}

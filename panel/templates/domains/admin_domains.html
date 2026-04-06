@@ -1,0 +1,6 @@
+{% extends "layouts/base.html" %}
+{% from "partials/status_badge.html" import render_status %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3"><h1 class="h3">Domeny i subdomeny</h1><a class="btn btn-primary" href="{{ url_for('domains.admin_domain_create') }}">Nowa domena</a></div>
+<div class="surface-card p-3"><div class="table-responsive"><table class="table"><thead><tr><th>Domena</th><th>Klient</th><th>Root</th><th>PHP</th><th>Status</th><th>Akcje</th></tr></thead><tbody>{% for domain in domains %}<tr><td><div>{{ domain.name }}</div><small class="text-secondary">{{ domain.subdomains|length }} subdomen</small></td><td>{{ domain.client.user.username }}</td><td>{{ domain.document_root }}</td><td>{{ domain.php_version }}</td><td>{{ render_status(domain.status) }}</td><td class="d-flex gap-2 flex-wrap"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('domains.admin_domain_edit', domain_id=domain.id) }}">Edytuj</a><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('domains.admin_subdomain_create', domain_id=domain.id) }}">Subdomena</a><form method="post" action="{{ url_for('domains.admin_domain_delete', domain_id=domain.id) }}" data-confirm="Usunąć domenę?"><button class="btn btn-sm btn-outline-danger">Usuń</button></form></td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

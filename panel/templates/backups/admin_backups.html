@@ -1,0 +1,5 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3"><h1 class="h3">Backupy</h1><a class="btn btn-primary" href="{{ url_for('backups.admin_create') }}">Nowy backup</a></div>
+<div class="surface-card p-3"><div class="table-responsive"><table class="table"><thead><tr><th>Klient</th><th>Typ</th><th>Status</th><th>Ścieżka</th><th>Zaplanowano</th></tr></thead><tbody>{% for backup in backups %}<tr><td>{{ backup.client.user.username }}</td><td>{{ backup.backup_type }}</td><td>{{ backup.status }}</td><td>{{ backup.storage_path }}</td><td>{{ backup.scheduled_for.strftime('%Y-%m-%d') if backup.scheduled_for else '-' }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

@@ -1,0 +1,4 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-4"><h1 class="h3 mb-4">{{ title }}</h1><form method="post" class="row g-3">{{ form.hidden_tag() }}<div class="col-md-6">{{ form.client_id.label(class="form-label") }}{{ form.client_id(class="form-select") }}</div><div class="col-md-6">{{ form.domain_id.label(class="form-label") }}{{ form.domain_id(class="form-select") }}</div><div class="col-md-6">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control") }}</div><div class="col-md-3">{{ form.default_ttl.label(class="form-label") }}{{ form.default_ttl(class="form-control") }}</div><div class="col-md-3 form-check ms-3">{{ form.is_active(class="form-check-input") }} {{ form.is_active.label(class="form-check-label") }}</div><div class="col-12"><button class="btn btn-primary">{{ form.submit.label.text }}</button></div></form></div>
+{% endblock %}

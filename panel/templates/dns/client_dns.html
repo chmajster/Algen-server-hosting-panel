@@ -1,0 +1,5 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+{% if not allow_dns_management %}<div class="alert alert-warning">Administracja DNS jest wyłączona dla Twojego konta.</div>{% endif %}
+<div class="surface-card p-3"><h1 class="h3 mb-3">Moje strefy DNS</h1>{% for zone in zones %}<div class="mb-4"><h2 class="h5">{{ zone.name }}</h2><div class="table-responsive"><table class="table"><thead><tr><th>Nazwa</th><th>Typ</th><th>Wartość</th><th></th></tr></thead><tbody>{% for record in zone.records %}<tr><td>{{ record.name }}</td><td>{{ record.type }}</td><td>{{ record.value }}</td><td>{% if allow_dns_management %}<a class="btn btn-sm btn-outline-primary" href="{{ url_for('dns.client_record_edit', record_id=record.id) }}">Edytuj</a>{% endif %}</td></tr>{% endfor %}</tbody></table></div></div>{% endfor %}</div>
+{% endblock %}

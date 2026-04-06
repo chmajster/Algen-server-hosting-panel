@@ -1,0 +1,11 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="row g-3">
+  <div class="col-12 col-xl-5">
+    <div class="surface-card p-3"><div class="d-flex justify-content-between mb-3"><h1 class="h4 mb-0">Strefy DNS</h1><a class="btn btn-sm btn-primary" href="{{ url_for('dns.admin_zone_create') }}">Nowa strefa</a></div><div class="table-responsive"><table class="table"><thead><tr><th>Strefa</th><th>Klient</th><th>TTL</th></tr></thead><tbody>{% for zone in zones %}<tr><td>{{ zone.name }}</td><td>{{ zone.client.user.username }}</td><td>{{ zone.default_ttl }}</td></tr>{% endfor %}</tbody></table></div></div>
+  </div>
+  <div class="col-12 col-xl-7">
+    <div class="surface-card p-3"><div class="d-flex justify-content-between mb-3"><h2 class="h4 mb-0">Rekordy</h2><a class="btn btn-sm btn-primary" href="{{ url_for('dns.admin_record_create') }}">Nowy rekord</a></div><div class="table-responsive"><table class="table"><thead><tr><th>Strefa</th><th>Nazwa</th><th>Typ</th><th>Wartość</th></tr></thead><tbody>{% for record in records %}<tr><td>{{ record.zone.name }}</td><td>{{ record.name }}</td><td>{{ record.type }}</td><td>{{ record.value }}</td></tr>{% endfor %}</tbody></table></div></div>
+  </div>
+</div>
+{% endblock %}

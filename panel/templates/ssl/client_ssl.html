@@ -1,0 +1,4 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-3"><h1 class="h3 mb-3">SSL domen</h1><div class="table-responsive"><table class="table"><thead><tr><th>Domena</th><th>Status</th><th>Ważny do</th><th></th></tr></thead><tbody>{% for cert in certificates %}<tr><td>{{ cert.domain.name }}</td><td>{{ cert.status }}</td><td>{{ cert.valid_until.strftime('%Y-%m-%d') if cert.valid_until else '-' }}</td><td><a class="btn btn-sm btn-outline-primary" href="{{ url_for('ssl.client_edit', cert_id=cert.id) }}">Edytuj</a></td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

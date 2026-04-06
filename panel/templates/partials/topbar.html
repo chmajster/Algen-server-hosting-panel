@@ -1,0 +1,12 @@
+<div class="topbar px-3 px-lg-4 py-3 d-flex justify-content-between align-items-center">
+  <div>
+    <h5 class="mb-0">{{ title or config.APP_NAME }}</h5>
+    <small class="text-secondary">Zalogowany: {{ current_user.full_name }} ({{ current_user.username }})</small>
+  </div>
+  <div class="d-flex gap-2 align-items-center">
+    {% if current_user.client_profile and current_user.client_profile.balance and current_user.has_role('client') %}
+      <span class="badge text-bg-light border">Saldo: {{ current_user.client_profile.balance.balance }} {{ current_user.client_profile.balance.currency }}</span>
+    {% endif %}
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('auth.logout') }}">Wyloguj</a>
+  </div>
+</div>
