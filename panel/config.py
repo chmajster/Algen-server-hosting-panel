@@ -26,6 +26,7 @@ class Config:
     APP_PORT = int(os.getenv("APP_PORT", "5000"))
     PREFERRED_URL_SCHEME = os.getenv("PREFERRED_URL_SCHEME", "http")
     STORAGE_ROOT = os.getenv("STORAGE_ROOT", str(BASE_DIR / "storage" / "uploads"))
+    CLIENT_HOME_ROOT = os.getenv("CLIENT_HOME_ROOT", str(BASE_DIR / "storage" / "clients"))
     BACKUP_ROOT = os.getenv("BACKUP_ROOT", str(BASE_DIR / "storage" / "backups"))
     HOSTS_HELPER_PATH = os.getenv(
         "HOSTS_HELPER_PATH",

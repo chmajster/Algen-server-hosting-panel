@@ -19,6 +19,7 @@ def app():
             "WTF_CSRF_ENABLED": False,
             "SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:",
             "STORAGE_ROOT": str(Path(temp_dir.name) / "uploads"),
+            "CLIENT_HOME_ROOT": str(Path(temp_dir.name) / "clients"),
             "BACKUP_ROOT": str(Path(temp_dir.name) / "backups"),
         }
     )

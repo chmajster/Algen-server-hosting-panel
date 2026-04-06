@@ -242,7 +242,7 @@ deploy_code() {
     --exclude '__pycache__' \
     --exclude '.pytest_cache' \
     "$SCRIPT_DIR"/ "$APP_DIR"/
-  mkdir -p "$APP_DIR/storage/uploads" "$APP_DIR/storage/backups" "$LOG_DIR"
+  mkdir -p "$APP_DIR/storage/uploads" "$APP_DIR/storage/clients" "$APP_DIR/storage/backups" "$LOG_DIR"
   chown -R "$APP_USER:$APP_GROUP" "$APP_DIR/storage" "$LOG_DIR"
   ok "Kod wdrozony do ${APP_DIR}"
 }
@@ -300,6 +300,7 @@ generate_env() {
   set_env_key "SECRET_KEY" "$(openssl rand -hex 32)"
   set_env_key "DATABASE_URL" "mysql+pymysql://${DB_USER}:${DB_PASSWORD}@127.0.0.1/${DB_NAME}"
   set_env_key "STORAGE_ROOT" "${APP_DIR}/storage/uploads"
+  set_env_key "CLIENT_HOME_ROOT" "${APP_DIR}/storage/clients"
   set_env_key "BACKUP_ROOT" "${APP_DIR}/storage/backups"
   set_env_key "HOSTS_HELPER_PATH" "$HOSTS_HELPER_TARGET"
   set_env_key "HOSTS_BACKUP_DIR" "/var/backups/hosting-panel/hosts"

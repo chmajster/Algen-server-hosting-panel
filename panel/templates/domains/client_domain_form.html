@@ -2,10 +2,17 @@
 {% block content %}
 <div class="surface-card p-4">
   <h1 class="h3 mb-4">{{ title }}</h1>
+  <p class="text-secondary mb-4">
+    Katalogi domeny sa zarzadzane automatycznie. Strona WWW jest publikowana z katalogu <code>public</code>.
+  </p>
   <form method="post" class="row g-3">
     {{ form.hidden_tag() }}
     <div class="col-md-6">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control", readonly=true) }}</div>
-    <div class="col-md-6">{{ form.document_root.label(class="form-label") }}{{ form.document_root(class="form-control") }}</div>
+    <div class="col-md-6">
+      {{ form.document_root.label(class="form-label") }}
+      {{ form.document_root(class="form-control", readonly=true, placeholder="Ustawiany automatycznie") }}
+      <div class="form-text">{% if managed_root_preview %}<code>{{ managed_root_preview }}</code>{% endif %}</div>
+    </div>
     <div class="col-md-4">{{ form.php_version.label(class="form-label") }}{{ form.php_version(class="form-control") }}</div>
     <div class="col-md-4">{{ form.status.label(class="form-label") }}{{ form.status(class="form-select") }}</div>
     <div class="col-12"><button class="btn btn-primary">{{ form.submit.label.text }}</button></div>

@@ -59,7 +59,7 @@ class DomainForm(FlaskForm):
     client_id = SelectField("Klient", coerce=int, validators=[DataRequired()])
     client_service_id = SelectField("Usluga", coerce=int, validators=[Optional()])
     name = StringField("Domena", validators=[DataRequired(), Length(max=255)])
-    document_root = StringField("Katalog docelowy", validators=[DataRequired(), Length(max=255)])
+    document_root = StringField("Katalog docelowy", validators=[Optional(), Length(max=255)])
     php_version = StringField("Wersja PHP", validators=[DataRequired(), Length(max=16)])
     status = SelectField(
         "Status",
@@ -72,7 +72,7 @@ class DomainForm(FlaskForm):
 
 class SubdomainForm(FlaskForm):
     name = StringField("Subdomena", validators=[DataRequired(), Length(max=255)])
-    document_root = StringField("Katalog docelowy", validators=[DataRequired(), Length(max=255)])
+    document_root = StringField("Katalog docelowy", validators=[Optional(), Length(max=255)])
     php_version = StringField("Wersja PHP", validators=[DataRequired(), Length(max=16)])
     status = SelectField("Status", choices=[("active", "Aktywna"), ("disabled", "Wylaczona")], validators=[DataRequired()])
     submit = SubmitField("Zapisz")

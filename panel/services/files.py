@@ -1,17 +1,33 @@
 from __future__ import annotations
 
+import re
 import shutil
 from pathlib import Path
 
 from flask import current_app
+
+from panel.models import Client
 
 
 class FileManagerError(ValueError):
     pass
 
 
+SAFE_SEGMENT_RE = re.compile(r"[^A-Za-z0-9._-]+")
+
+
+def _safe_segment(value: str, fallback: str) -> str:
+    cleaned = SAFE_SEGMENT_RE.sub("-", (value or "").strip().lower()).strip(".-")
+    return cleaned or fallback
+
+
 def client_root(client_id: int) -> Path:
-    root = Path(current_app.config["STORAGE_ROOT"]) / f"client_{client_id}"
+    client = Client.query.get(client_id)
+    if client is not None and client.user is not None:
+        username = _safe_segment(client.user.username, f"client-{client_id}")
+        root = Path(current_app.config.get("CLIENT_HOME_ROOT", current_app.config["STORAGE_ROOT"])) / username
+    else:
+        root = Path(current_app.config.get("CLIENT_HOME_ROOT", current_app.config["STORAGE_ROOT"])) / f"client_{client_id}"
     root.mkdir(parents=True, exist_ok=True)
     return root.resolve()
 

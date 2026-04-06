@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 
 from panel.extensions import db
-from panel.models import BillingTransaction, Client, Domain, Mailbox, SSLCertificate, SystemSetting, User
+from panel.models import BillingTransaction, Client, Domain, Mailbox, SSLCertificate, Subdomain, SystemSetting, User
 from panel.seed import seed_defaults
 from panel.services.billing import adjust_balance
 
@@ -138,6 +139,92 @@ def test_admin_ssl_edit_page_loads_for_domain_certificate(client, app):
     response = client.get(f"/admin/ssl/{cert_id}/edit")
     assert response.status_code == 200
     assert "ssl-example.test" in response.get_data(as_text=True)
+
+
+def test_admin_domain_create_provisions_expected_directory_tree(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        client_id = client_profile.id
+        username = client_profile.user.username
+        clients_root = Path(app.config["CLIENT_HOME_ROOT"])
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        "/admin/domains/new",
+        data={
+            "client_id": client_id,
+            "client_service_id": 0,
+            "name": "example.test",
+            "document_root": "",
+            "php_version": "8.3",
+            "status": "active",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+
+    domain_root = clients_root / username / "domains" / "example.test"
+    assert (domain_root / "public").is_dir()
+    assert (domain_root / "private").is_dir()
+    assert (domain_root / "subdomains").is_dir()
+    assert (domain_root / "ssl").is_dir()
+    assert (domain_root / "config").is_dir()
+    assert (domain_root / "public" / ".htaccess").exists()
+    assert (domain_root / "config" / "domain.json").exists()
+
+    with app.app_context():
+        domain = Domain.query.filter_by(name="example.test").first()
+        assert domain is not None
+        assert domain.document_root == str(domain_root / "public")
+
+
+def test_admin_subdomain_create_provisions_directory_tree(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        domain = Domain(
+            client=client_profile,
+            name="example.test",
+            document_root="/tmp/placeholder",
+            php_version="8.3",
+            status="active",
+        )
+        db.session.add(domain)
+        db.session.commit()
+        domain_id = domain.id
+        username = client_profile.user.username
+        clients_root = Path(app.config["CLIENT_HOME_ROOT"])
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        f"/admin/domains/{domain_id}/subdomains/new",
+        data={
+            "name": "blog",
+            "document_root": "",
+            "php_version": "8.3",
+            "status": "active",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+
+    subdomain_root = clients_root / username / "domains" / "example.test" / "subdomains" / "blog"
+    assert (subdomain_root / "public").is_dir()
+    assert (subdomain_root / "private").is_dir()
+    assert (subdomain_root / "ssl").is_dir()
+    assert (subdomain_root / "config").is_dir()
+
+    with app.app_context():
+        subdomain = Subdomain.query.filter_by(name="blog").first()
+        assert subdomain is not None
+        assert subdomain.document_root == str(subdomain_root / "public")
 
 
 def test_login_get_is_not_rate_limited(client):
