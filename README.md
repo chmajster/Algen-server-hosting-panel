@@ -35,9 +35,16 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
+Przyklad z podaniem hasla startowego administratora:
+
+```bash
+sudo ./install.sh -p 'TwojeHaslo123!'
+```
+
 Installer ma kolorowy, etapowy output i na końcu pokazuje publiczny adres IP serwera oraz adres panelu na porcie `80`.
 Przy ponownej instalacji, jeśli konto administratora już istnieje, installer nie zmienia jego hasła.
 Logowanie ma osobny limit prób oparty o rzeczywisty adres IP klienta za nginx i zwraca własny widok `429`, zamiast surowej strony biblioteki.
+Po instalacji installer wykonuje też informacyjny test usług i pokazuje, czy `hosting-panel`, `mariadb`, `nginx`, timer auto-update oraz sam panel HTTP odpowiadają poprawnie.
 
 Installer instaluje jeden z wariantów:
 

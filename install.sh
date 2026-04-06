@@ -58,12 +58,23 @@ else
 fi
 
 CURRENT_STEP=0
-TOTAL_STEPS=12
+TOTAL_STEPS=13
 
 print_banner() {
   printf '%s\n' "${C_CYAN}${C_BOLD}============================================================${C_RESET}"
   printf '%s\n' "${C_CYAN}${C_BOLD}                Hosting Panel Installer                     ${C_RESET}"
   printf '%s\n' "${C_CYAN}${C_BOLD}============================================================${C_RESET}"
+}
+
+usage() {
+  cat <<EOF
+Uzycie:
+  ./install.sh [-p HASLO_ADMINA]
+
+Opcje:
+  -p HASLO_ADMINA   Ustawia haslo poczatkowe administratora przy pierwszej instalacji
+  -h                Pokazuje te pomoc
+EOF
 }
 
 log() {
@@ -90,9 +101,38 @@ warn() {
   printf '%s[WARN]%s %s\n' "${C_YELLOW}${C_BOLD}" "${C_RESET}" "$1"
 }
 
+info() {
+  printf '%s[INFO]%s %s\n' "${C_CYAN}${C_BOLD}" "${C_RESET}" "$1"
+}
+
 fail() {
   printf '%s[ERROR]%s %s\n' "${C_RED}${C_BOLD}" "${C_RESET}" "$1" >&2
   exit 1
+}
+
+parse_args() {
+  local opt
+  OPTIND=1
+  while getopts ":p:h" opt; do
+    case "$opt" in
+      p)
+        [[ -n "$OPTARG" ]] || fail "Argument -p wymaga podania hasla."
+        ADMIN_PASSWORD="$OPTARG"
+        ;;
+      h)
+        usage
+        exit 0
+        ;;
+      :)
+        fail "Argument -${OPTARG} wymaga wartosci."
+        ;;
+      \?)
+        fail "Nieznany argument: -${OPTARG}. Uzyj -h, aby zobaczyc pomoc."
+        ;;
+    esac
+  done
+  shift $((OPTIND - 1))
+  [[ $# -eq 0 ]] || fail "Nieznane dodatkowe argumenty: $*"
 }
 
 require_root() {
@@ -356,6 +396,51 @@ configure_nginx() {
   ok "nginx dziala i publikuje panel na porcie 80"
 }
 
+report_unit_status() {
+  local label="$1"
+  local unit_name="$2"
+  local active_state enabled_state
+
+  active_state="$(systemctl is-active "$unit_name" 2>/dev/null || true)"
+  enabled_state="$(systemctl is-enabled "$unit_name" 2>/dev/null || true)"
+
+  if [[ "$active_state" == "active" ]]; then
+    ok "${label}: dziala (active), autostart: ${enabled_state:-unknown}"
+  else
+    warn "${label}: nie dziala (${active_state:-unknown}), autostart: ${enabled_state:-unknown}"
+  fi
+}
+
+report_http_status() {
+  local label="$1"
+  local url="$2"
+  local http_code
+
+  http_code="$(curl -k -L -s -o /dev/null -w "%{http_code}" --max-time 10 "$url" 2>/dev/null || printf '000')"
+  if [[ "$http_code" =~ ^(200|301|302|303|307|308)$ ]]; then
+    ok "${label}: odpowiada (HTTP ${http_code})"
+  else
+    warn "${label}: brak poprawnej odpowiedzi (HTTP ${http_code})"
+  fi
+}
+
+verify_services() {
+  step "Test uslug po instalacji"
+  info "Ponizszy raport ma charakter informacyjny i nie przerywa instalacji."
+  report_unit_status "Hosting Panel" "hosting-panel.service"
+  report_unit_status "MariaDB" "mariadb.service"
+  if [[ "$INSTALL_NGINX" == "true" ]]; then
+    report_unit_status "nginx" "nginx.service"
+  fi
+  if [[ "$AUTOUPDATE_ENABLED" == "true" ]]; then
+    report_unit_status "Auto-update timer" "hosting-panel-update.timer"
+  fi
+  report_http_status "Panel przez Gunicorn" "http://127.0.0.1:8000/"
+  if [[ "$INSTALL_NGINX" == "true" ]]; then
+    report_http_status "Panel przez nginx" "http://127.0.0.1/"
+  fi
+}
+
 print_summary() {
   step "Podsumowanie instalacji"
   local primary_ip
@@ -391,6 +476,7 @@ EOF
 
 main() {
   print_banner
+  parse_args "$@"
   require_root
   detect_os
   install_system_packages
@@ -405,6 +491,7 @@ main() {
   configure_systemd
   configure_autoupdate
   configure_nginx
+  verify_services
   print_summary
 }
 
