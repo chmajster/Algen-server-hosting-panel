@@ -8,32 +8,39 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
 </head>
 <body>
-  {% set is_authenticated = current_user.is_authenticated %}
-  {% if is_authenticated %}
-    <div class="container-fluid panel-shell">
-      <div class="row flex-nowrap">
-        <aside class="col-12 col-lg-3 col-xl-2 p-3 sidebar">
-          {% include "partials/sidebar.html" %}
-        </aside>
-        <main class="col p-0">
-          {% include "partials/topbar.html" %}
-          <div class="p-3 p-lg-4">
-            {% include "partials/flash.html" %}
-          </div>
+  {% if current_user.is_authenticated %}
+    <div class="app-shell d-lg-flex">
+      <aside class="sidebar d-none d-lg-flex flex-column p-3">
+        {% include "partials/sidebar.html" %}
+      </aside>
+
+      <div class="app-main flex-grow-1 min-vh-100">
+        {% include "partials/topbar.html" %}
+        <main class="content-wrap p-3 p-lg-4">
+          {% include "partials/flash.html" %}
+          {% block content %}{% endblock %}
         </main>
+      </div>
+    </div>
+
+    <div class="mobile-nav d-lg-none">
+      <div class="offcanvas offcanvas-start" tabindex="-1" id="mobileSidebar">
+        <div class="offcanvas-header">
+          <h5 class="offcanvas-title">{{ config.APP_NAME }}</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
+        </div>
+        <div class="offcanvas-body sidebar p-3">
+          {% include "partials/sidebar.html" %}
+        </div>
       </div>
     </div>
   {% else %}
     <main class="container py-5">
       {% include "partials/flash.html" %}
+      {% block content %}{% endblock %}
     </main>
   {% endif %}
-  {% if is_authenticated %}
-    <script>
-      window.__content_mount = ".panel-shell main .p-3";
-    </script>
-  {% endif %}
-  {% block content %}{% endblock %}
+
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
