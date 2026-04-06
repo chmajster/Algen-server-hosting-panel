@@ -35,6 +35,8 @@ chmod +x install.sh
 sudo ./install.sh
 ```
 
+Installer ma kolorowy, etapowy output i na końcu pokazuje publiczny adres IP serwera oraz adres panelu na porcie `80`.
+
 Installer instaluje jeden z wariantów:
 
 - preferowany:

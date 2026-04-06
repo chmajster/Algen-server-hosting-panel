@@ -32,12 +32,65 @@ SUDOERS_TARGET="/etc/sudoers.d/hosting-panel-hosts-helper"
 SSL_SUDOERS_TARGET="/etc/sudoers.d/hosting-panel-ssl-helper"
 ENV_FILE="$APP_DIR/.env"
 
+if [[ -t 1 ]]; then
+  C_RESET=$'\033[0m'
+  C_BOLD=$'\033[1m'
+  C_DIM=$'\033[2m'
+  C_RED=$'\033[31m'
+  C_GREEN=$'\033[32m'
+  C_YELLOW=$'\033[33m'
+  C_BLUE=$'\033[34m'
+  C_MAGENTA=$'\033[35m'
+  C_CYAN=$'\033[36m'
+  C_WHITE=$'\033[37m'
+else
+  C_RESET=""
+  C_BOLD=""
+  C_DIM=""
+  C_RED=""
+  C_GREEN=""
+  C_YELLOW=""
+  C_BLUE=""
+  C_MAGENTA=""
+  C_CYAN=""
+  C_WHITE=""
+fi
+
+CURRENT_STEP=0
+TOTAL_STEPS=12
+
+print_banner() {
+  printf '%s\n' "${C_CYAN}${C_BOLD}============================================================${C_RESET}"
+  printf '%s\n' "${C_CYAN}${C_BOLD}                Hosting Panel Installer                     ${C_RESET}"
+  printf '%s\n' "${C_CYAN}${C_BOLD}============================================================${C_RESET}"
+}
+
 log() {
-  printf '\n[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1"
+  printf '\n%s[%s]%s %s\n' "${C_DIM}" "$(date '+%Y-%m-%d %H:%M:%S')" "${C_RESET}" "$1"
+}
+
+step() {
+  CURRENT_STEP=$((CURRENT_STEP + 1))
+  printf '\n%s[%02d/%02d]%s %s%s%s\n' \
+    "${C_BLUE}${C_BOLD}" \
+    "$CURRENT_STEP" \
+    "$TOTAL_STEPS" \
+    "${C_RESET}" \
+    "${C_BOLD}" \
+    "$1" \
+    "${C_RESET}"
+}
+
+ok() {
+  printf '%s[OK]%s %s\n' "${C_GREEN}${C_BOLD}" "${C_RESET}" "$1"
+}
+
+warn() {
+  printf '%s[WARN]%s %s\n' "${C_YELLOW}${C_BOLD}" "${C_RESET}" "$1"
 }
 
 fail() {
-  echo "Błąd: $1" >&2
+  printf '%s[ERROR]%s %s\n' "${C_RED}${C_BOLD}" "${C_RESET}" "$1" >&2
   exit 1
 }
 
@@ -51,9 +104,9 @@ detect_os() {
   source /etc/os-release
   case "${ID:-}" in
     debian|ubuntu) ;;
-    *) fail "Obsługiwane są Debian, Ubuntu lub zgodne dystrybucje." ;;
+    *) fail "Obslugiwane sa Debian, Ubuntu lub zgodne dystrybucje." ;;
   esac
-  [[ "$INSTALL_NGINX" == "true" ]] || fail "Panel ma działać na porcie 80, więc nginx musi pozostać włączony."
+  [[ "$INSTALL_NGINX" == "true" ]] || fail "Panel ma dzialac na porcie 80, wiec nginx musi pozostac wlaczony."
 }
 
 backup_file() {
@@ -70,26 +123,27 @@ format_env_value() {
 }
 
 install_system_packages() {
-  log "Instaluję pakiety systemowe"
+  step "Instalacja pakietow systemowych"
   apt-get update
   local packages=(
-    build-essential curl wget git rsync ca-certificates pkg-config openssl \
-    libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
-    libffi-dev libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev \
-    liblzma-dev libgdbm-dev uuid-dev libmariadb-dev mariadb-server mariadb-client \
-    sudo
+    build-essential curl wget git rsync ca-certificates pkg-config openssl
+    libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev
+    libffi-dev libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev
+    liblzma-dev libgdbm-dev uuid-dev libmariadb-dev mariadb-server mariadb-client
+    sudo certbot
   )
   if [[ "$INSTALL_NGINX" == "true" ]]; then
     packages+=(nginx)
   fi
-  packages+=(certbot)
   DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+  ok "Pakiety systemowe zainstalowane"
 }
 
 install_python() {
+  step "Instalacja Pythona"
   local candidate_pkg candidate_venv candidate_dev candidate_bin resolved_version
 
-  if [[ -n "$PYTHON_PACKAGE" ]] && [[ -n "$PYTHON_VENV_PACKAGE" ]] && [[ -n "$PYTHON_DEV_PACKAGE" ]] && [[ -n "$PYTHON_BIN" ]]; then
+  if [[ -n "$PYTHON_PACKAGE" && -n "$PYTHON_VENV_PACKAGE" && -n "$PYTHON_DEV_PACKAGE" && -n "$PYTHON_BIN" ]]; then
     candidate_pkg="$PYTHON_PACKAGE"
     candidate_venv="$PYTHON_VENV_PACKAGE"
     candidate_dev="$PYTHON_DEV_PACKAGE"
@@ -106,13 +160,8 @@ install_python() {
     candidate_bin="/usr/bin/python3"
   fi
 
-  log "Instaluję ${candidate_pkg} z oficjalnego repozytorium APT systemu Ubuntu"
-
-  DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    "$candidate_pkg" \
-    "$candidate_venv" \
-    "$candidate_dev"
-
+  log "Instaluje ${candidate_pkg} z oficjalnego repozytorium APT systemu Ubuntu"
+  DEBIAN_FRONTEND=noninteractive apt-get install -y "$candidate_pkg" "$candidate_venv" "$candidate_dev"
   [[ -x "$candidate_bin" ]] || fail "Po instalacji nie znaleziono interpretera ${candidate_bin}."
 
   PYTHON_PACKAGE="$candidate_pkg"
@@ -120,20 +169,22 @@ install_python() {
   PYTHON_DEV_PACKAGE="$candidate_dev"
   PYTHON_BIN="$candidate_bin"
   resolved_version="$("$PYTHON_BIN" -c 'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")')"
-  log "Używany interpreter: ${PYTHON_BIN} (${resolved_version})"
+  ok "Uzywany interpreter: ${PYTHON_BIN} (${resolved_version})"
 }
 
 ensure_app_user() {
+  step "Tworzenie uzytkownika systemowego"
   if ! getent group "$APP_GROUP" >/dev/null; then
     groupadd --system "$APP_GROUP"
   fi
   if ! id "$APP_USER" >/dev/null 2>&1; then
     useradd --system --gid "$APP_GROUP" --home "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
   fi
+  ok "Uzytkownik ${APP_USER}:${APP_GROUP} gotowy"
 }
 
 deploy_code() {
-  log "Wdrażam kod aplikacji do $APP_DIR"
+  step "Wdrozenie kodu aplikacji"
   mkdir -p "$APP_DIR"
   rsync -a --delete \
     --exclude '.git' \
@@ -144,17 +195,19 @@ deploy_code() {
     "$SCRIPT_DIR"/ "$APP_DIR"/
   mkdir -p "$APP_DIR/storage/uploads" "$APP_DIR/storage/backups" "$LOG_DIR"
   chown -R "$APP_USER:$APP_GROUP" "$APP_DIR/storage" "$LOG_DIR"
+  ok "Kod wdrozony do ${APP_DIR}"
 }
 
 setup_virtualenv() {
-  log "Tworzę virtualenv i instaluję zależności Pythona"
+  step "Konfiguracja virtualenv"
   "$PYTHON_BIN" -m venv "$APP_DIR/.venv"
   "$APP_DIR/.venv/bin/pip" install --upgrade pip wheel setuptools
   "$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt"
+  ok "Virtualenv i zaleznosci Python gotowe"
 }
 
 configure_database() {
-  log "Konfiguruję MariaDB"
+  step "Konfiguracja bazy danych"
   systemctl enable mariadb
   systemctl restart mariadb
   mariadb <<SQL
@@ -167,6 +220,7 @@ GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'127.0.0.1';
 GRANT ALL PRIVILEGES ON \`${DB_NAME}\`.* TO '${DB_USER}'@'localhost';
 FLUSH PRIVILEGES;
 SQL
+  ok "MariaDB skonfigurowana"
 }
 
 set_env_key() {
@@ -182,7 +236,7 @@ set_env_key() {
 }
 
 generate_env() {
-  log "Generuję plik .env"
+  step "Generowanie konfiguracji .env"
   mkdir -p "$APP_DIR"
   if [[ ! -f "$ENV_FILE" ]]; then
     cp "$APP_DIR/.env.example" "$ENV_FILE"
@@ -214,16 +268,18 @@ generate_env() {
   set_env_key "AUTOUPDATE_INTERVAL" "$AUTOUPDATE_INTERVAL"
   chown "$APP_USER:$APP_GROUP" "$ENV_FILE"
   chmod 640 "$ENV_FILE"
+  ok "Plik .env gotowy: ${ENV_FILE}"
 }
 
 run_migrations_and_seed() {
-  log "Uruchamiam migracje i seed danych"
+  step "Migracje i dane startowe"
   sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && '$APP_DIR/.venv/bin/flask' --app wsgi:app db upgrade"
   sudo -u "$APP_USER" bash -lc "cd '$APP_DIR' && '$APP_DIR/.venv/bin/flask' --app wsgi:app seed-data --admin-username '$ADMIN_USERNAME' --admin-password '$ADMIN_PASSWORD' --admin-email '$ADMIN_EMAIL'"
+  ok "Migracje i seed zakonczone"
 }
 
 install_hosts_helper() {
-  log "Instaluję helper do zarządzania /etc/hosts"
+  step "Instalacja helperow uprzywilejowanych"
   mkdir -p /var/backups/hosting-panel/hosts
   install -o root -g root -m 750 "$APP_DIR/scripts/hosts_helper.py" "$HOSTS_HELPER_TARGET"
   install -o root -g root -m 750 "$APP_DIR/scripts/ssl_helper.py" "$SSL_HELPER_TARGET"
@@ -231,14 +287,14 @@ install_hosts_helper() {
   backup_file "$SSL_SUDOERS_TARGET"
   cp "$APP_DIR/deploy/hosting-panel-hosts-helper.sudoers" "$SUDOERS_TARGET"
   cp "$APP_DIR/deploy/hosting-panel-ssl-helper.sudoers" "$SSL_SUDOERS_TARGET"
-  chmod 440 "$SUDOERS_TARGET"
-  chmod 440 "$SSL_SUDOERS_TARGET"
+  chmod 440 "$SUDOERS_TARGET" "$SSL_SUDOERS_TARGET"
   visudo -cf "$SUDOERS_TARGET"
   visudo -cf "$SSL_SUDOERS_TARGET"
+  ok "Helpery hosts i SSL zainstalowane"
 }
 
 configure_systemd() {
-  log "Konfiguruję usługę systemd"
+  step "Konfiguracja uslugi aplikacji"
   mkdir -p "$LOG_DIR"
   install -o root -g root -m 750 "$APP_DIR/scripts/install_app_service.sh" /usr/local/bin/hosting-panel-install-service
   APP_USER="$APP_USER" \
@@ -247,18 +303,20 @@ configure_systemd() {
   ENV_FILE="$ENV_FILE" \
   GUNICORN_BIN="$APP_DIR/.venv/bin/gunicorn" \
   /usr/local/bin/hosting-panel-install-service
+  ok "Usluga hosting-panel.service aktywna"
 }
 
 configure_autoupdate() {
+  step "Konfiguracja auto-update"
   if [[ "$AUTOUPDATE_ENABLED" != "true" ]]; then
-    log "Auto-update wyłączony"
+    warn "Auto-update wylaczony"
     systemctl disable --now hosting-panel-update.timer >/dev/null 2>&1 || true
     rm -f /etc/systemd/system/hosting-panel-update.service /etc/systemd/system/hosting-panel-update.timer
     systemctl daemon-reload
     return 0
   fi
 
-  log "Konfiguruję auto-update z GitHub"
+  log "Konfiguruje auto-update z GitHub"
   install -o root -g root -m 750 "$APP_DIR/scripts/update_from_github.sh" /usr/local/bin/hosting-panel-update
   install -o root -g root -m 750 "$APP_DIR/scripts/install_autoupdate_service.sh" /usr/local/bin/hosting-panel-install-autoupdate
   APP_DIR="$APP_DIR" \
@@ -266,11 +324,13 @@ configure_autoupdate() {
   APP_GROUP="$APP_GROUP" \
   TIMER_ONCALENDAR="$AUTOUPDATE_INTERVAL" \
   /usr/local/bin/hosting-panel-install-autoupdate
+  ok "Timer auto-update aktywny"
 }
 
 configure_nginx() {
+  step "Konfiguracja nginx na porcie 80"
   [[ "$INSTALL_NGINX" == "true" ]] || return 0
-  log "Konfiguruję nginx"
+  log "Konfiguruje nginx"
   backup_file /etc/nginx/sites-available/hosting-panel
   sed "s/server_name _;/server_name ${APP_DOMAIN};/" "$APP_DIR/deploy/nginx-hosting-panel.conf" > /etc/nginx/sites-available/hosting-panel
   ln -sf /etc/nginx/sites-available/hosting-panel /etc/nginx/sites-enabled/hosting-panel
@@ -278,36 +338,40 @@ configure_nginx() {
   nginx -t
   systemctl enable nginx
   systemctl restart nginx
+  ok "nginx dziala i publikuje panel na porcie 80"
 }
 
 print_summary() {
+  step "Podsumowanie instalacji"
   local primary_ip
   primary_ip="$(hostname -I | awk '{print $1}')"
   if [[ -z "$primary_ip" ]]; then
     primary_ip="$(ip -4 route get 1.1.1.1 | awk '{print $7; exit}')"
   fi
   local app_url="http://${primary_ip}"
-  log "Instalacja zakończona"
+  printf '\n%sInstalacja zakonczona sukcesem%s\n' "${C_GREEN}${C_BOLD}" "${C_RESET}"
   cat <<EOF
-Adres IP serwera: ${primary_ip}
-Panel publiczny: ${app_url}
-Panel publiczny port 80: http://${primary_ip}:80
-Panel lokalny Gunicorn: http://127.0.0.1:8000
-Administrator: ${ADMIN_USERNAME}
-Hasło administratora: ${ADMIN_PASSWORD}
-Plik środowiskowy: ${ENV_FILE}
-Logi aplikacji: ${LOG_DIR}
-Usługi systemd: hosting-panel.service, mariadb.service$( [[ "$INSTALL_NGINX" == "true" ]] && printf ', nginx.service' )
-Helper hosts: ${HOSTS_HELPER_TARGET}
-Backupy hosts: /var/backups/hosting-panel/hosts
-Auto-update repo: ${AUTOUPDATE_REPO_URL}
-Auto-update branch: ${AUTOUPDATE_BRANCH}
-Auto-update: $( [[ "$AUTOUPDATE_ENABLED" == "true" ]] && printf 'hosting-panel-update.timer (%s)' "$AUTOUPDATE_INTERVAL" || printf 'wyłączony' )
-Źródło pakietu: ${PACKAGE_NAME:-repo} ${VERSION:-local}
+${C_CYAN}${C_BOLD}Adres IP serwera:${C_RESET} ${C_WHITE}${primary_ip}${C_RESET}
+${C_CYAN}${C_BOLD}Panel publiczny:${C_RESET} ${C_GREEN}${app_url}${C_RESET}
+${C_CYAN}${C_BOLD}Panel publiczny port 80:${C_RESET} ${C_GREEN}http://${primary_ip}:80${C_RESET}
+${C_CYAN}${C_BOLD}Panel lokalny Gunicorn:${C_RESET} http://127.0.0.1:8000
+${C_MAGENTA}${C_BOLD}Administrator:${C_RESET} ${ADMIN_USERNAME}
+${C_MAGENTA}${C_BOLD}Haslo administratora:${C_RESET} ${ADMIN_PASSWORD}
+${C_BLUE}${C_BOLD}Plik srodowiskowy:${C_RESET} ${ENV_FILE}
+${C_BLUE}${C_BOLD}Logi aplikacji:${C_RESET} ${LOG_DIR}
+${C_BLUE}${C_BOLD}Uslugi systemd:${C_RESET} hosting-panel.service, mariadb.service$( [[ "$INSTALL_NGINX" == "true" ]] && printf ', nginx.service' )
+${C_BLUE}${C_BOLD}Helper hosts:${C_RESET} ${HOSTS_HELPER_TARGET}
+${C_BLUE}${C_BOLD}Helper SSL:${C_RESET} ${SSL_HELPER_TARGET}
+${C_BLUE}${C_BOLD}Backupy hosts:${C_RESET} /var/backups/hosting-panel/hosts
+${C_YELLOW}${C_BOLD}Auto-update repo:${C_RESET} ${AUTOUPDATE_REPO_URL}
+${C_YELLOW}${C_BOLD}Auto-update branch:${C_RESET} ${AUTOUPDATE_BRANCH}
+${C_YELLOW}${C_BOLD}Auto-update:${C_RESET} $( [[ "$AUTOUPDATE_ENABLED" == "true" ]] && printf 'hosting-panel-update.timer (%s)' "$AUTOUPDATE_INTERVAL" || printf 'wylaczony' )
+${C_DIM}Zrodlo pakietu: ${PACKAGE_NAME:-repo} ${VERSION:-local}${C_RESET}
 EOF
 }
 
 main() {
+  print_banner
   require_root
   detect_os
   install_system_packages
