@@ -117,6 +117,27 @@ sudo systemctl restart hosting-panel.service
 sudo systemctl enable hosting-panel.service
 ```
 
+## Smoketest aplikacji
+
+Mozesz uruchomic szybki smoketest na dwa sposoby:
+
+- z konsoli (CLI Flask):
+
+```bash
+cd /opt/hosting-panel
+. .venv/bin/activate
+flask --app wsgi:app smoke-test
+```
+
+- z panelu administratora: menu `Smoketest` lub karta na dashboardzie admina.
+
+Smoketest sprawdza:
+
+- polaczenie z baza danych,
+- obecność kluczowych endpointow aplikacji,
+- dostepnosc katalogow `STORAGE_ROOT`, `CLIENT_HOME_ROOT`, `BACKUP_ROOT`,
+- runtime Docker, jesli wlaczone jest `CLIENT_APACHE_ENABLED=true`.
+
 Jeśli chcesz odtworzyć sam serwis bez pełnej reinstalacji:
 
 ```bash

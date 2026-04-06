@@ -51,6 +51,32 @@ def test_admin_dashboard_loads(client):
     assert "Ostatnie logi operacji" in response.get_data(as_text=True)
 
 
+def test_admin_smoke_test_page_loads(client):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.get("/admin/smoke-test")
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Smoketest aplikacji" in body
+    assert "Uruchom smoketest" in body
+
+
+def test_admin_can_run_smoke_test_from_panel(client):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.post("/admin/smoke-test", data={}, follow_redirects=True)
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Smoketest zakonczony:" in body
+    assert "PASS" in body
+
+
 def test_admin_mail_page_loads(client):
     client.post(
         "/auth/login",
@@ -389,3 +415,11 @@ def test_seed_preserves_existing_admin_password(app):
         db.session.refresh(admin)
         assert admin.check_password("Admin123!")
         assert not admin.check_password("NewPassword123!")
+
+
+def test_smoke_test_cli_command(app):
+    runner = app.test_cli_runner()
+    result = runner.invoke(args=["smoke-test"])
+    assert result.exit_code == 0
+    assert "Smoketest: OK" in result.output
+    assert "[PASS]" in result.output

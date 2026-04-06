@@ -1,0 +1,59 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Smoketest aplikacji</h1>
+  <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary">Powrot do dashboardu</a>
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <p class="text-secondary mb-3">
+    Test sprawdza podstawowe elementy aplikacji: baze danych, kluczowe endpointy,
+    katalogi robocze oraz runtime Docker dla trybu Apache per klient.
+  </p>
+  <form method="post" class="d-flex flex-wrap gap-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn btn-primary">Uruchom smoketest</button>
+  </form>
+</div>
+
+{% if result %}
+  <div class="surface-card p-3 mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h5 class="mb-0">Wynik</h5>
+      <span class="badge {% if result.success %}text-bg-success{% else %}text-bg-warning{% endif %}">
+        {{ result.passed }}/{{ result.total }}
+      </span>
+    </div>
+    <div class="text-secondary small">Czas wykonania: {{ result.duration_ms }} ms</div>
+  </div>
+
+  <div class="surface-card p-3">
+    <div class="table-responsive">
+      <table class="table align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Kontrola</th>
+            <th>Status</th>
+            <th>Szczegoly</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for check in result.checks %}
+            <tr>
+              <td>{{ check.name }}</td>
+              <td>
+                {% if check.success %}
+                  <span class="badge text-bg-success">PASS</span>
+                {% else %}
+                  <span class="badge text-bg-danger">FAIL</span>
+                {% endif %}
+              </td>
+              <td>{{ check.message }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+{% endif %}
+{% endblock %}

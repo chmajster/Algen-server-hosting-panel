@@ -17,6 +17,7 @@
     <a class="nav-link {% if request.endpoint in ['ssl.admin_ssl', 'ssl.admin_create', 'ssl.admin_edit'] %}active{% endif %}" href="{{ url_for('ssl.admin_ssl') }}">SSL</a>
     <a class="nav-link {% if request.endpoint in ['backups.admin_backups', 'backups.admin_create'] %}active{% endif %}" href="{{ url_for('backups.admin_backups') }}">Backupy</a>
     <a class="nav-link {% if request.endpoint == 'monitoring.index' %}active{% endif %}" href="{{ url_for('monitoring.index') }}">Monitoring</a>
+    <a class="nav-link {% if request.endpoint == 'admin.smoke_test' %}active{% endif %}" href="{{ url_for('admin.smoke_test') }}">Smoketest</a>
     <a class="nav-link {% if request.endpoint == 'hosts.index' %}active{% endif %}" href="{{ url_for('hosts.index') }}">Hosts</a>
     <a class="nav-link {% if request.endpoint == 'admin.settings' %}active{% endif %}" href="{{ url_for('admin.settings') }}">Ustawienia</a>
   {% else %}

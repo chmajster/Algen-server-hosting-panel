@@ -48,6 +48,11 @@
   </div>
   <div class="col-12 col-xl-5">
     <div class="surface-card p-3 mb-3">
+      <h5>Smoketest aplikacji</h5>
+      <p class="text-secondary mb-3">Uruchom szybka diagnostyke panelu bez wychodzenia z interfejsu administratora.</p>
+      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.smoke_test') }}">Przejdz do smoketestu</a>
+    </div>
+    <div class="surface-card p-3 mb-3">
       <h5>Status usług</h5>
       <div class="d-flex flex-wrap gap-2">
         {% for service_name, state in service_states.items() %}

@@ -25,6 +25,7 @@ from panel.models import (
 from panel.services.audit import log_activity
 from panel.services.billing import adjust_balance, ensure_client_balance
 from panel.services.monitoring import collect_server_metrics, service_statuses
+from panel.services.smoketest import run_app_smoke_test
 from panel.services.settings import (
     CSS_FRAMEWORK_SETTING_KEY,
     css_framework_choices,
@@ -264,3 +265,28 @@ def settings():
         flash("Ustawienia wygladu zostaly zapisane.", "success")
         return redirect(url_for("admin.settings"))
     return render_template("admin/settings.html", form=form, title="Ustawienia")
+
+
+@admin_bp.route("/smoke-test", methods=["GET", "POST"])
+@login_required
+@roles_required("administrator")
+def smoke_test():
+    result = None
+    if request.method == "POST":
+        result = run_app_smoke_test()
+        level = "success" if result.success else "warning"
+        flash(
+            f"Smoketest zakonczony: {result.passed}/{result.total} kontroli zaliczone, czas {result.duration_ms} ms.",
+            level,
+        )
+        log_activity(
+            "admin.smoke_test",
+            "application",
+            "Uruchomiono smoketest aplikacji z panelu administratora.",
+            entity_id="smoke-test",
+            actor=current_user,
+            metadata=result.as_dict(),
+            success=result.success,
+        )
+        db.session.commit()
+    return render_template("admin/smoke_test.html", title="Smoketest aplikacji", result=result)

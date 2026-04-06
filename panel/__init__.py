@@ -86,6 +86,7 @@ def register_cli(app: Flask) -> None:
     from panel.extensions import db
     from panel.seed import seed_defaults
     from panel.services.billing import run_billing_cycle
+    from panel.services.smoketest import run_app_smoke_test
 
     @app.cli.command("seed-data")
     @click.option("--admin-username", default="admin")
@@ -138,6 +139,20 @@ def register_cli(app: Flask) -> None:
         processed = run_billing_cycle()
         db.session.commit()
         click.echo(f"Przetworzono cykli: {processed}")
+
+    @app.cli.command("smoke-test")
+    def smoke_test():
+        result = run_app_smoke_test()
+        summary = (
+            f"Smoketest: {'OK' if result.success else 'BLAD'} "
+            f"({result.passed}/{result.total}) w {result.duration_ms} ms"
+        )
+        click.echo(summary)
+        for check in result.checks:
+            status = "PASS" if check.success else "FAIL"
+            click.echo(f"[{status}] {check.name}: {check.message}")
+        if not result.success:
+            raise click.ClickException("Smoketest zakonczyl sie bledem.")
 
 
 def register_context(app: Flask) -> None:
