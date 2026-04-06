@@ -27,7 +27,9 @@ if [[ -f "$SCRIPT_DIR/RELEASE" ]]; then
 fi
 LOG_DIR="/var/log/hosting-panel"
 HOSTS_HELPER_TARGET="/usr/local/bin/hosting-panel-hosts-helper"
+SSL_HELPER_TARGET="/usr/local/bin/hosting-panel-ssl-helper"
 SUDOERS_TARGET="/etc/sudoers.d/hosting-panel-hosts-helper"
+SSL_SUDOERS_TARGET="/etc/sudoers.d/hosting-panel-ssl-helper"
 ENV_FILE="$APP_DIR/.env"
 
 log() {
@@ -51,6 +53,7 @@ detect_os() {
     debian|ubuntu) ;;
     *) fail "Obsługiwane są Debian, Ubuntu lub zgodne dystrybucje." ;;
   esac
+  [[ "$INSTALL_NGINX" == "true" ]] || fail "Panel ma działać na porcie 80, więc nginx musi pozostać włączony."
 }
 
 backup_file() {
@@ -79,6 +82,7 @@ install_system_packages() {
   if [[ "$INSTALL_NGINX" == "true" ]]; then
     packages+=(nginx)
   fi
+  packages+=(certbot)
   DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
 }
 
@@ -198,6 +202,8 @@ generate_env() {
   set_env_key "HOSTS_BACKUP_DIR" "/var/backups/hosting-panel/hosts"
   set_env_key "HOSTS_SUDO_BIN" "/usr/bin/sudo"
   set_env_key "HOSTS_ALLOWED_FILE" "/etc/hosts"
+  set_env_key "SSL_HELPER_PATH" "$SSL_HELPER_TARGET"
+  set_env_key "LETSENCRYPT_EMAIL" "$ADMIN_EMAIL"
   set_env_key "DEFAULT_TIMEZONE" "Europe/Warsaw"
   set_env_key "RATELIMIT_DEFAULT" "200/day;50/hour"
   set_env_key "RATELIMIT_STORAGE_URI" "memory://"
@@ -220,10 +226,15 @@ install_hosts_helper() {
   log "Instaluję helper do zarządzania /etc/hosts"
   mkdir -p /var/backups/hosting-panel/hosts
   install -o root -g root -m 750 "$APP_DIR/scripts/hosts_helper.py" "$HOSTS_HELPER_TARGET"
+  install -o root -g root -m 750 "$APP_DIR/scripts/ssl_helper.py" "$SSL_HELPER_TARGET"
   backup_file "$SUDOERS_TARGET"
+  backup_file "$SSL_SUDOERS_TARGET"
   cp "$APP_DIR/deploy/hosting-panel-hosts-helper.sudoers" "$SUDOERS_TARGET"
+  cp "$APP_DIR/deploy/hosting-panel-ssl-helper.sudoers" "$SSL_SUDOERS_TARGET"
   chmod 440 "$SUDOERS_TARGET"
+  chmod 440 "$SSL_SUDOERS_TARGET"
   visudo -cf "$SUDOERS_TARGET"
+  visudo -cf "$SSL_SUDOERS_TARGET"
 }
 
 configure_systemd() {
@@ -270,10 +281,17 @@ configure_nginx() {
 }
 
 print_summary() {
-  local app_url="http://$(hostname -I | awk '{print $1}')"
+  local primary_ip
+  primary_ip="$(hostname -I | awk '{print $1}')"
+  if [[ -z "$primary_ip" ]]; then
+    primary_ip="$(ip -4 route get 1.1.1.1 | awk '{print $7; exit}')"
+  fi
+  local app_url="http://${primary_ip}"
   log "Instalacja zakończona"
   cat <<EOF
-Adres aplikacji: ${app_url}
+Adres IP serwera: ${primary_ip}
+Panel publiczny: ${app_url}
+Panel publiczny port 80: http://${primary_ip}:80
 Panel lokalny Gunicorn: http://127.0.0.1:8000
 Administrator: ${ADMIN_USERNAME}
 Hasło administratora: ${ADMIN_PASSWORD}

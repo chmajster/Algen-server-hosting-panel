@@ -1,30 +1,47 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-
 from flask import Blueprint, flash, redirect, render_template, url_for
-from flask_login import login_required
+from flask_login import current_user, login_required
 
 from panel.extensions import db
 from panel.forms.services import SSLCertificateForm
-from panel.models import Domain, SSLCertificate
-from panel.services.audit import log_activity
+from panel.models import SSLCertificate
+from panel.services.ssl import (
+    SSLServiceError,
+    bind_certificate_target,
+    issue_certificate,
+    renew_certificate,
+    resolve_ssl_target,
+)
 from panel.utils.decorators import active_account_required, roles_required
-from panel.utils.query import current_client, domain_choices, owned_or_404
+from panel.utils.query import current_client, owned_or_404, ssl_target_choices
 
 
 ssl_bp = Blueprint("ssl", __name__)
 
 
 def _populate_form(form: SSLCertificateForm, client_id: int | None = None):
-    form.domain_id.choices = domain_choices(client_id)
+    form.target_ref.choices = ssl_target_choices(client_id)
+
+
+def _cert_form_to_model(form: SSLCertificateForm, cert: SSLCertificate) -> SSLCertificate:
+    target_type, target, target_name, _client = resolve_ssl_target(form.target_ref.data)
+    cert.common_name = target_name
+    cert.provider = form.provider.data
+    cert.status = form.status.data
+    cert.auto_renew = form.auto_renew.data
+    cert.certificate_path = form.certificate_path.data
+    cert.private_key_path = form.private_key_path.data
+    bind_certificate_target(cert, target_type, target)
+    return cert
 
 
 @ssl_bp.route("/admin/ssl")
 @login_required
 @roles_required("administrator")
 def admin_ssl():
-    return render_template("ssl/admin_ssl.html", certificates=SSLCertificate.query.order_by(SSLCertificate.created_at.desc()).all())
+    certificates = SSLCertificate.query.order_by(SSLCertificate.created_at.desc()).all()
+    return render_template("ssl/admin_ssl.html", certificates=certificates)
 
 
 @ssl_bp.route("/admin/ssl/new", methods=["GET", "POST"])
@@ -34,25 +51,58 @@ def admin_create():
     form = SSLCertificateForm()
     _populate_form(form)
     if form.validate_on_submit():
-        domain = Domain.query.get_or_404(form.domain_id.data)
-        cert = SSLCertificate(
-            domain=domain,
-            provider=form.provider.data,
-            status=form.status.data,
-            auto_renew=form.auto_renew.data,
-            certificate_path=form.certificate_path.data,
-            private_key_path=form.private_key_path.data,
-            valid_from=datetime.utcnow(),
-            valid_until=datetime.utcnow() + timedelta(days=90),
-            metadata_json={"renewal_provider": form.provider.data},
-        )
-        domain.ssl_enabled = True
+        cert = _cert_form_to_model(form, SSLCertificate(metadata_json={}))
         db.session.add(cert)
-        log_activity("ssl.create", "ssl_certificate", f"Utworzono certyfikat dla {domain.name}", entity_id=domain.name, client=domain.client)
         db.session.commit()
         flash("Certyfikat SSL został zapisany.", "success")
         return redirect(url_for("ssl.admin_ssl"))
     return render_template("ssl/ssl_form.html", form=form, title="Nowy certyfikat")
+
+
+@ssl_bp.route("/admin/ssl/<int:cert_id>/edit", methods=["GET", "POST"])
+@login_required
+@roles_required("administrator")
+def admin_edit(cert_id: int):
+    cert = SSLCertificate.query.get_or_404(cert_id)
+    form = SSLCertificateForm(obj=cert)
+    form.target_ref.data = f"domain:{cert.domain_id}" if cert.domain_id else f"subdomain:{cert.subdomain_id}"
+    _populate_form(form)
+    if form.validate_on_submit():
+        _cert_form_to_model(form, cert)
+        db.session.commit()
+        flash("Certyfikat został zaktualizowany.", "success")
+        return redirect(url_for("ssl.admin_ssl"))
+    return render_template("ssl/ssl_form.html", form=form, title=f"Edycja certyfikatu {cert.target_name}")
+
+
+@ssl_bp.route("/admin/ssl/<int:cert_id>/issue", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def admin_issue(cert_id: int):
+    cert = SSLCertificate.query.get_or_404(cert_id)
+    try:
+        issue_certificate(cert, actor=current_user)
+        db.session.commit()
+        flash(f"Wygenerowano certyfikat dla {cert.target_name}.", "success")
+    except SSLServiceError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+    return redirect(url_for("ssl.admin_ssl"))
+
+
+@ssl_bp.route("/admin/ssl/<int:cert_id>/renew", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def admin_renew(cert_id: int):
+    cert = SSLCertificate.query.get_or_404(cert_id)
+    try:
+        renew_certificate(cert, actor=current_user)
+        db.session.commit()
+        flash(f"Odnowiono certyfikat dla {cert.target_name}.", "success")
+    except SSLServiceError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+    return redirect(url_for("ssl.admin_ssl"))
 
 
 @ssl_bp.route("/client/ssl")
@@ -61,7 +111,28 @@ def admin_create():
 @active_account_required
 def client_ssl():
     client = current_client()
-    return render_template("ssl/client_ssl.html", certificates=[domain.ssl_certificate for domain in client.domains if domain.ssl_certificate])
+    certificates = [cert for cert in SSLCertificate.query.order_by(SSLCertificate.created_at.desc()).all() if cert.client_id == client.id]
+    return render_template("ssl/client_ssl.html", certificates=certificates)
+
+
+@ssl_bp.route("/client/ssl/new", methods=["GET", "POST"])
+@login_required
+@roles_required("client")
+@active_account_required
+def client_create():
+    client = current_client()
+    form = SSLCertificateForm()
+    _populate_form(form, client.id)
+    if form.validate_on_submit():
+        cert = _cert_form_to_model(form, SSLCertificate(metadata_json={}))
+        if cert.client_id != client.id:
+            flash("Nieprawidłowy wybór witryny.", "danger")
+            return redirect(url_for("ssl.client_ssl"))
+        db.session.add(cert)
+        db.session.commit()
+        flash("Certyfikat SSL został zapisany.", "success")
+        return redirect(url_for("ssl.client_ssl"))
+    return render_template("ssl/ssl_form.html", form=form, title="Nowy certyfikat SSL")
 
 
 @ssl_bp.route("/client/ssl/<int:cert_id>/edit", methods=["GET", "POST"])
@@ -71,15 +142,46 @@ def client_ssl():
 def client_edit(cert_id: int):
     cert = owned_or_404(SSLCertificate, cert_id)
     form = SSLCertificateForm(obj=cert)
-    _populate_form(form, cert.domain.client_id)
+    form.target_ref.data = f"domain:{cert.domain_id}" if cert.domain_id else f"subdomain:{cert.subdomain_id}"
+    _populate_form(form, cert.client_id)
     if form.validate_on_submit():
-        cert.provider = form.provider.data
-        cert.status = form.status.data
-        cert.auto_renew = form.auto_renew.data
-        cert.certificate_path = form.certificate_path.data
-        cert.private_key_path = form.private_key_path.data
-        log_activity("ssl.client_edit", "ssl_certificate", f"Klient zaktualizował certyfikat {cert.domain.name}", entity_id=cert.id, client=cert.domain.client)
+        _cert_form_to_model(form, cert)
+        if cert.client_id != current_client().id:
+            flash("Nieprawidłowy wybór witryny.", "danger")
+            return redirect(url_for("ssl.client_ssl"))
         db.session.commit()
         flash("Certyfikat został zaktualizowany.", "success")
         return redirect(url_for("ssl.client_ssl"))
-    return render_template("ssl/ssl_form.html", form=form, title=f"Edycja certyfikatu {cert.domain.name}")
+    return render_template("ssl/ssl_form.html", form=form, title=f"Edycja certyfikatu {cert.target_name}")
+
+
+@ssl_bp.route("/client/ssl/<int:cert_id>/issue", methods=["POST"])
+@login_required
+@roles_required("client")
+@active_account_required
+def client_issue(cert_id: int):
+    cert = owned_or_404(SSLCertificate, cert_id)
+    try:
+        issue_certificate(cert, actor=current_user)
+        db.session.commit()
+        flash(f"Wygenerowano certyfikat dla {cert.target_name}.", "success")
+    except SSLServiceError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+    return redirect(url_for("ssl.client_ssl"))
+
+
+@ssl_bp.route("/client/ssl/<int:cert_id>/renew", methods=["POST"])
+@login_required
+@roles_required("client")
+@active_account_required
+def client_renew(cert_id: int):
+    cert = owned_or_404(SSLCertificate, cert_id)
+    try:
+        renew_certificate(cert, actor=current_user)
+        db.session.commit()
+        flash(f"Odnowiono certyfikat dla {cert.target_name}.", "success")
+    except SSLServiceError as exc:
+        db.session.rollback()
+        flash(str(exc), "danger")
+    return redirect(url_for("ssl.client_ssl"))
