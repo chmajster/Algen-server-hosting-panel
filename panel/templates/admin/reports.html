@@ -2,6 +2,9 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">{{ title }}</h1>
+  <form method="post" action="{{ url_for('admin.reports_send_overdue_reminders') }}">
+    <button class="btn btn-outline-primary">Wyslij przypomnienia overdue</button>
+  </form>
 </div>
 
 <div class="row g-3">
@@ -29,18 +32,76 @@
       <div class="h4 mb-0">{{ metrics.overdue_amount }} PLN</div>
     </div>
   </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="surface-card p-3 h-100">
+      <div class="text-secondary small">Prognoza 3M</div>
+      <div class="h4 mb-0">{{ metrics.forecast_total_3m }} PLN</div>
+      <small class="text-secondary">confidence: {{ metrics.forecast_confidence }}</small>
+    </div>
+  </div>
+  <div class="col-12 col-md-6 col-xl-3">
+    <div class="surface-card p-3 h-100">
+      <div class="text-secondary small">Przypomnienia 30d</div>
+      <div class="h4 mb-0">{{ metrics.overdue_reminders_sent_30d }}</div>
+      <small class="text-secondary">failed: {{ metrics.overdue_reminders_failed_30d }}</small>
+    </div>
+  </div>
 </div>
 
-<div class="surface-card p-3 mt-4">
-  <h2 class="h5 mb-3">Szczegoly</h2>
-  <div class="table-responsive">
-    <table class="table align-middle">
-      <tbody>
-        <tr><th>Aktywni klienci</th><td>{{ metrics.active_clients }}</td></tr>
-        <tr><th>Klienci churn</th><td>{{ metrics.churned_clients }}</td></tr>
-        <tr><th>Liczba transakcji overdue</th><td>{{ metrics.overdue_transactions }}</td></tr>
-      </tbody>
-    </table>
+<div class="row g-3 mt-4">
+  <div class="col-12 col-lg-4">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Szczegoly</h2>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <tbody>
+            <tr><th>Aktywni klienci</th><td>{{ metrics.active_clients }}</td></tr>
+            <tr><th>Klienci churn</th><td>{{ metrics.churned_clients }}</td></tr>
+            <tr><th>Liczba transakcji overdue</th><td>{{ metrics.overdue_transactions }}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-4">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Historia przychodu (6M)</h2>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Miesiac</th><th>Przychod</th></tr></thead>
+          <tbody>
+            {% for item in metrics.revenue_history %}
+              <tr>
+                <td>{{ item.month }}</td>
+                <td>{{ item.revenue }} PLN</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="2" class="text-secondary">Brak danych.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-4">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Prognoza przychodu (3M)</h2>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>Miesiac</th><th>Prognoza</th></tr></thead>
+          <tbody>
+            {% for item in metrics.forecast_months %}
+              <tr>
+                <td>{{ item.month }}</td>
+                <td>{{ item.revenue }} PLN</td>
+              </tr>
+            {% else %}
+              <tr><td colspan="2" class="text-secondary">Brak danych.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}

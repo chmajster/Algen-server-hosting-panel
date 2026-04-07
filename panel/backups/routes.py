@@ -10,6 +10,7 @@ from panel.extensions import db
 from panel.forms.backups import ExternalBackupTargetForm
 from panel.forms.services import BackupForm
 from panel.models import Backup, BackupRestoreJob, BackupVerificationRun, Client, ExternalBackupTarget
+from panel.services.approvals import action_requires_approval, create_approval_request
 from panel.services.audit import log_activity
 from panel.services.backup_restore import create_restore_job, process_restore_job
 from panel.services.backup_storage import (
@@ -220,6 +221,34 @@ def admin_verify_schedule(schedule_type: str):
 @roles_required("administrator")
 def admin_restore_request(backup_id: int):
     backup = Backup.query.get_or_404(backup_id)
+
+    if action_requires_approval("backups.restore"):
+        approval_request, created = create_approval_request(
+            action_key="backups.restore",
+            target_type="backup",
+            target_id=backup.id,
+            requested_by=current_user,
+            reason=f"Restore backupu #{backup.id}",
+            client=backup.client,
+            metadata={
+                "backup_id": backup.id,
+                "backup_type": backup.backup_type,
+                "storage_path": backup.storage_path,
+            },
+        )
+        db.session.commit()
+        if created:
+            flash(
+                f"Wniosek o restore backupu #{backup.id} zostal utworzony (#{approval_request.id}) i czeka na akceptacje.",
+                "warning",
+            )
+        else:
+            flash(
+                f"Istnieje juz aktywny wniosek restore dla backupu #{backup.id} (#{approval_request.id}).",
+                "info",
+            )
+        return redirect(url_for("backups.admin_backups"))
+
     job = create_restore_job(backup=backup, requested_by=current_user)
     process_restore_job(job)
     log_activity(

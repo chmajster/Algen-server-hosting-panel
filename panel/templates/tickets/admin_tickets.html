@@ -2,12 +2,17 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">Tickety klientow</h1>
-  <div class="btn-group btn-group-sm" role="group" aria-label="Filtr statusu">
-    <a class="btn {% if not status_filter %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets') }}">Wszystkie</a>
-    <a class="btn {% if status_filter == 'open' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets', status='open') }}">Otwarte</a>
-    <a class="btn {% if status_filter == 'pending' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets', status='pending') }}">Oczekuje</a>
-    <a class="btn {% if status_filter == 'answered' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets', status='answered') }}">Odpowiedziane</a>
-    <a class="btn {% if status_filter == 'closed' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets', status='closed') }}">Zamkniete</a>
+  <div class="d-flex gap-2">
+    <div class="btn-group btn-group-sm" role="group" aria-label="Filtr statusu">
+      <a class="btn {% if not status_filter %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets') }}">Wszystkie</a>
+      <a class="btn {% if status_filter == 'open' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets', status='open') }}">Otwarte</a>
+      <a class="btn {% if status_filter == 'pending' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets', status='pending') }}">Oczekuje</a>
+      <a class="btn {% if status_filter == 'answered' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets', status='answered') }}">Odpowiedziane</a>
+      <a class="btn {% if status_filter == 'closed' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets', status='closed') }}">Zamkniete</a>
+    </div>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('tickets.admin_macros') }}">Makra</a>
+    <a class="btn btn-sm btn-outline-success" href="{{ url_for('admin.export_dataset', dataset_key='tickets', format='csv', status=status_filter or None) }}">Eksport CSV</a>
+    <a class="btn btn-sm btn-outline-success" href="{{ url_for('admin.export_dataset', dataset_key='tickets', format='xlsx', status=status_filter or None) }}">Eksport XLSX</a>
   </div>
 </div>
 <div class="surface-card p-3">

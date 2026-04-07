@@ -1,0 +1,120 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+	<h1 class="h3">Akceptacje ryzykownych akcji</h1>
+	<a class="btn btn-outline-secondary" href="{{ url_for('admin.audit_integrity') }}">Integralnosc audytu</a>
+</div>
+
+<div class="row g-3 mb-3">
+	<div class="col-6 col-xl-2">
+		<div class="surface-card p-3 h-100"><div class="small text-secondary">Pending</div><div class="h4 mb-0">{{ counts.pending }}</div></div>
+	</div>
+	<div class="col-6 col-xl-2">
+		<div class="surface-card p-3 h-100"><div class="small text-secondary">Approved</div><div class="h4 mb-0">{{ counts.approved }}</div></div>
+	</div>
+	<div class="col-6 col-xl-2">
+		<div class="surface-card p-3 h-100"><div class="small text-secondary">Executed</div><div class="h4 mb-0">{{ counts.executed }}</div></div>
+	</div>
+	<div class="col-6 col-xl-2">
+		<div class="surface-card p-3 h-100"><div class="small text-secondary">Rejected</div><div class="h4 mb-0">{{ counts.rejected }}</div></div>
+	</div>
+	<div class="col-6 col-xl-2">
+		<div class="surface-card p-3 h-100"><div class="small text-secondary">Expired</div><div class="h4 mb-0">{{ counts.expired }}</div></div>
+	</div>
+	<div class="col-6 col-xl-2">
+		<div class="surface-card p-3 h-100"><div class="small text-secondary">Cancelled</div><div class="h4 mb-0">{{ counts.cancelled }}</div></div>
+	</div>
+</div>
+
+<div class="surface-card p-3 mb-3">
+	<form method="get" class="row g-2 align-items-end">
+		<div class="col-12 col-md-4">
+			<label class="form-label">Status</label>
+			<select class="form-select" name="status">
+				{% for value in ['all', 'pending', 'approved', 'executed', 'rejected', 'expired', 'cancelled'] %}
+					<option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ value }}</option>
+				{% endfor %}
+			</select>
+		</div>
+		<div class="col-12 col-md-4">
+			<label class="form-label">Akcja</label>
+			<select class="form-select" name="action">
+				<option value="all" {% if action_filter == 'all' %}selected{% endif %}>all</option>
+				{% for action_key in action_keys %}
+					<option value="{{ action_key }}" {% if action_filter == action_key %}selected{% endif %}>{{ action_key }}</option>
+				{% endfor %}
+			</select>
+		</div>
+		<div class="col-12 col-md-4 d-flex gap-2">
+			<button class="btn btn-primary" type="submit">Filtruj</button>
+			<a class="btn btn-outline-secondary" href="{{ url_for('admin.approvals') }}">Reset</a>
+		</div>
+	</form>
+</div>
+
+<div class="surface-card p-3">
+	{% if requests %}
+	<div class="table-responsive">
+		<table class="table align-middle">
+			<thead>
+				<tr>
+					<th>ID</th>
+					<th>Akcja</th>
+					<th>Target</th>
+					<th>Status</th>
+					<th>Glosy</th>
+					<th>Wnioskodawca</th>
+					<th>Termin</th>
+					<th>Utworzono</th>
+					<th>Akcje</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for approval in requests %}
+				{% set approvals_count = approval.decisions|selectattr('decision', 'equalto', 'approve')|list|length %}
+				{% set rejections_count = approval.decisions|selectattr('decision', 'equalto', 'reject')|list|length %}
+				<tr>
+					<td>#{{ approval.id }}</td>
+					<td>
+						<div>{{ approval.action_key }}</div>
+						{% if approval.reason %}
+							<small class="text-secondary">{{ approval.reason }}</small>
+						{% endif %}
+					</td>
+					<td>{{ approval.target_type }}: {{ approval.target_id }}</td>
+					<td>
+						<div>{{ approval.status }}</div>
+						{% if approval.execution_error %}
+							<small class="text-danger">{{ approval.execution_error }}</small>
+						{% endif %}
+					</td>
+					<td>{{ approvals_count }}/{{ approval.required_approvals }} {% if rejections_count %}<span class="text-danger">(R: {{ rejections_count }})</span>{% endif %}</td>
+					<td>{{ approval.requested_by.username if approval.requested_by else '-' }}</td>
+					<td>{{ approval.expires_at.strftime('%Y-%m-%d %H:%M') if approval.expires_at else '-' }}</td>
+					<td>{{ approval.created_at.strftime('%Y-%m-%d %H:%M') if approval.created_at else '-' }}</td>
+					<td>
+						{% if approval.status == 'pending' %}
+							<div class="d-flex flex-column gap-2">
+								<form method="post" action="{{ url_for('admin.approvals_approve', request_id=approval.id) }}">
+									<input class="form-control form-control-sm mb-1" type="text" name="note" maxlength="255" placeholder="Notatka (opcjonalnie)">
+									<button class="btn btn-sm btn-outline-success">Approve</button>
+								</form>
+								<form method="post" action="{{ url_for('admin.approvals_reject', request_id=approval.id) }}">
+									<input class="form-control form-control-sm mb-1" type="text" name="note" maxlength="255" placeholder="Powod odrzucenia">
+									<button class="btn btn-sm btn-outline-danger">Reject</button>
+								</form>
+							</div>
+						{% else %}
+							<span class="text-secondary">Brak</span>
+						{% endif %}
+					</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+	{% else %}
+	<p class="text-secondary mb-0">Brak wnioskow dla aktualnego filtra.</p>
+	{% endif %}
+</div>
+{% endblock %}

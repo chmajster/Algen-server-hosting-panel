@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from panel.extensions import csrf, db
 from panel.forms.billing import ClientPlanChangeForm, ClientTopupForm
 from panel.forms.services import ClientServiceForm, ServicePlanForm
-from panel.models import BillingTransaction, Client, ClientService, ExternalBackupTarget, OnlinePayment, ServicePlan
+from panel.models import BillingTransaction, BulkOperation, Client, ClientService, ExternalBackupTarget, OnlinePayment, ServicePlan
 from panel.services.audit import log_activity
 from panel.services.billing import (
     adjust_balance,
@@ -19,6 +19,11 @@ from panel.services.billing import (
     plan_price_for_period,
     schedule_initial_cycle,
     update_client_financial_status,
+)
+from panel.services.bulk_operations import (
+    bulk_change_service_plan,
+    bulk_restart_hosting_services,
+    bulk_set_service_manual_state,
 )
 from panel.services.payments import (
     PaymentProviderError,
@@ -279,12 +284,110 @@ def admin_services():
             if service.status != "deleted" and service.billing_period == "monthly"
         ),
     }
+
+    bulk_operation = None
+    bulk_items = []
+    bulk_operation_id_raw = (request.args.get("bulk_operation_id") or "").strip()
+    if bulk_operation_id_raw.isdigit():
+        bulk_operation = BulkOperation.query.get(int(bulk_operation_id_raw))
+        if bulk_operation is not None and bulk_operation.target_type == "client_service":
+            bulk_items = list(bulk_operation.items)
+
     return render_template(
         "billing/admin_services.html",
         services=services,
         stats=stats,
         enforcement_states=enforcement_states,
+        plans=ServicePlan.query.filter_by(is_active=True).order_by(ServicePlan.name.asc()).all(),
+        bulk_operation=bulk_operation,
+        bulk_items=bulk_items,
     )
+
+
+@billing_bp.route("/admin/billing/services/bulk", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def admin_services_bulk_action():
+    action = (request.form.get("action") or "").strip().lower()
+    dry_run = (request.form.get("dry_run") or "") == "1"
+    confirm_text = (request.form.get("confirm_text") or "").strip()
+    service_ids = []
+    for raw_id in request.form.getlist("service_ids"):
+        if str(raw_id).isdigit():
+            service_ids.append(int(raw_id))
+
+    if not service_ids:
+        flash("Wybierz co najmniej jedna usluge do operacji bulk.", "warning")
+        return redirect(url_for("billing.admin_services"))
+
+    if action not in {"plan_change", "suspend", "unsuspend", "restart"}:
+        flash("Nieprawidlowa akcja bulk.", "danger")
+        return redirect(url_for("billing.admin_services"))
+
+    if not dry_run and action in {"plan_change", "suspend", "restart"} and confirm_text != "POTWIERDZ":
+        flash("Dla operacji destrukcyjnych wpisz POTWIERDZ.", "danger")
+        return redirect(url_for("billing.admin_services"))
+
+    operation = None
+    summary = {"total": 0, "success": 0, "failed": 0, "dry_run": dry_run}
+
+    if action == "plan_change":
+        target_plan_id_raw = (request.form.get("target_plan_id") or "").strip()
+        if not target_plan_id_raw.isdigit():
+            flash("Wybierz docelowy plan dla operacji bulk.", "danger")
+            return redirect(url_for("billing.admin_services"))
+        target_plan = ServicePlan.query.get_or_404(int(target_plan_id_raw))
+        operation, summary = bulk_change_service_plan(
+            service_ids=service_ids,
+            target_plan=target_plan,
+            actor=current_user,
+            dry_run=dry_run,
+        )
+    elif action == "suspend":
+        reason = (request.form.get("reason") or "Masowe reczne zawieszenie uslug").strip()
+        operation, summary = bulk_set_service_manual_state(
+            service_ids=service_ids,
+            suspend=True,
+            reason=reason,
+            actor=current_user,
+            dry_run=dry_run,
+        )
+    elif action == "unsuspend":
+        operation, summary = bulk_set_service_manual_state(
+            service_ids=service_ids,
+            suspend=False,
+            reason="Masowe reczne odwieszenie uslug",
+            actor=current_user,
+            dry_run=dry_run,
+        )
+    elif action == "restart":
+        operation, summary = bulk_restart_hosting_services(
+            service_ids=service_ids,
+            actor=current_user,
+            dry_run=dry_run,
+        )
+
+    log_activity(
+        "billing.bulk_operation",
+        "bulk_operation",
+        f"Uruchomiono operacje bulk ({action}) dla uslug",
+        entity_id=operation.id if operation is not None else action,
+        actor=current_user,
+        metadata={
+            "action": action,
+            "dry_run": dry_run,
+            "service_count": len(service_ids),
+            "summary": summary,
+        },
+    )
+    db.session.commit()
+
+    flash(
+        f"Bulk {action}: sukces {summary['success']}, bledy {summary['failed']}, "
+        f"tryb {'podglad' if dry_run else 'wykonanie'}.",
+        "info",
+    )
+    return redirect(url_for("billing.admin_services", bulk_operation_id=operation.id if operation else None))
 
 
 @billing_bp.route("/admin/billing/services/new", methods=["GET", "POST"])

@@ -46,6 +46,23 @@ class Config:
     LOGIN_RATELIMIT = os.getenv("LOGIN_RATELIMIT", "10 per 10 minutes")
     SELF_REGISTRATION_ENABLED = os.getenv("SELF_REGISTRATION_ENABLED", "true").lower() == "true"
     REGISTRATION_AUTO_LOGIN = os.getenv("REGISTRATION_AUTO_LOGIN", "true").lower() == "true"
+    ANTI_FRAUD_ENABLED = os.getenv("ANTI_FRAUD_ENABLED", "true").lower() == "true"
+    ANTI_FRAUD_REVIEW_THRESHOLD = int(os.getenv("ANTI_FRAUD_REVIEW_THRESHOLD", "50"))
+    ANTI_FRAUD_BLOCK_THRESHOLD = int(os.getenv("ANTI_FRAUD_BLOCK_THRESHOLD", "80"))
+    ANTI_FRAUD_IP_WINDOW_MINUTES = int(os.getenv("ANTI_FRAUD_IP_WINDOW_MINUTES", "30"))
+    ANTI_FRAUD_IP_THRESHOLD = int(os.getenv("ANTI_FRAUD_IP_THRESHOLD", "3"))
+    ANTI_FRAUD_DISPOSABLE_DOMAINS = os.getenv(
+        "ANTI_FRAUD_DISPOSABLE_DOMAINS",
+        "mailinator.com,tempmail.com,10minutemail.com,guerrillamail.com",
+    )
+    APPROVALS_ENABLED = os.getenv("APPROVALS_ENABLED", "true").lower() == "true"
+    APPROVALS_RISKY_ACTIONS = os.getenv("APPROVALS_RISKY_ACTIONS", "domains.delete,backups.restore")
+    APPROVALS_REQUIRED_COUNTS = os.getenv("APPROVALS_REQUIRED_COUNTS", "domains.delete=1,backups.restore=1")
+    APPROVALS_MIN_APPROVER_ROLE = os.getenv("APPROVALS_MIN_APPROVER_ROLE", "operator")
+    APPROVALS_ALLOW_SELF_APPROVAL = os.getenv("APPROVALS_ALLOW_SELF_APPROVAL", "false").lower() == "true"
+    APPROVALS_REQUEST_TTL_MINUTES = int(os.getenv("APPROVALS_REQUEST_TTL_MINUTES", "1440"))
+    AUDIT_CHAIN_ENABLED = os.getenv("AUDIT_CHAIN_ENABLED", "true").lower() == "true"
+    AUDIT_CHAIN_SECRET = os.getenv("AUDIT_CHAIN_SECRET", SECRET_KEY)
     TWO_FACTOR_AVAILABLE = os.getenv("TWO_FACTOR_AVAILABLE", "false").lower() == "true"
     TWO_FACTOR_ISSUER = os.getenv("TWO_FACTOR_ISSUER", APP_NAME)
     TWO_FACTOR_LOGIN_RATELIMIT = os.getenv("TWO_FACTOR_LOGIN_RATELIMIT", "10 per 10 minutes")
@@ -82,6 +99,12 @@ class Config:
     TICKETS_ESCALATION_ENABLED = os.getenv("TICKETS_ESCALATION_ENABLED", "true").lower() == "true"
     BILLING_GRACE_DAYS = int(os.getenv("BILLING_GRACE_DAYS", "3"))
     BILLING_AUTO_RESUME = os.getenv("BILLING_AUTO_RESUME", "true").lower() == "true"
+    BILLING_OVERDUE_REMINDERS_ENABLED = os.getenv("BILLING_OVERDUE_REMINDERS_ENABLED", "true").lower() == "true"
+    BILLING_OVERDUE_REMINDER_OFFSETS = os.getenv("BILLING_OVERDUE_REMINDER_OFFSETS", "0,3,7")
+    BILLING_OVERDUE_REMINDER_SUBJECT = os.getenv(
+        "BILLING_OVERDUE_REMINDER_SUBJECT",
+        "Przypomnienie o zaleglej platnosci ({days} dni)",
+    )
     ONLINE_PAYMENTS_ENABLED = os.getenv("ONLINE_PAYMENTS_ENABLED", "false").lower() == "true"
     ONLINE_PAYMENTS_PROVIDER = os.getenv("ONLINE_PAYMENTS_PROVIDER", "stripe")
     ONLINE_PAYMENTS_CURRENCY = os.getenv("ONLINE_PAYMENTS_CURRENCY", "PLN")
@@ -103,6 +126,8 @@ class Config:
     CLIENT_APACHE_HTTP_PORT_BASE = int(os.getenv("CLIENT_APACHE_HTTP_PORT_BASE", "18000"))
     CLIENT_APACHE_CONTAINER_PREFIX = os.getenv("CLIENT_APACHE_CONTAINER_PREFIX", "hosting-panel-client-apache")
     CLIENT_APACHE_REMOVE_EMPTY = os.getenv("CLIENT_APACHE_REMOVE_EMPTY", "true").lower() == "true"
+    DOMAIN_REGISTRAR_PROVIDER = os.getenv("DOMAIN_REGISTRAR_PROVIDER", "mock")
+    DOMAIN_REGISTRAR_DEFAULT_NAMESERVERS = os.getenv("DOMAIN_REGISTRAR_DEFAULT_NAMESERVERS", "")
     SMOKE_TEST_LOG_FILE = os.getenv("SMOKE_TEST_LOG_FILE", "/var/log/hosting-panel/smoke-test.log")
     SMOKE_TEST_API_TOKEN = os.getenv("SMOKE_TEST_API_TOKEN", "")
     SMOKE_TEST_API_ALLOWLIST = os.getenv(

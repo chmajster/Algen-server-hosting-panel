@@ -1,6 +1,83 @@
 {% extends "layouts/base.html" %}
 {% from "partials/status_badge.html" import render_status %}
 {% block content %}
-<div class="d-flex justify-content-between mb-3"><h1 class="h3">Domeny i subdomeny</h1><a class="btn btn-primary" href="{{ url_for('domains.admin_domain_create') }}">Nowa domena</a></div>
-<div class="surface-card p-3"><div class="table-responsive"><table class="table"><thead><tr><th>Domena</th><th>Klient</th><th>Root</th><th>PHP</th><th>Status</th><th>Akcje</th></tr></thead><tbody>{% for domain in domains %}<tr><td><div>{{ domain.name }}</div><small class="text-secondary">{{ domain.subdomains|length }} subdomen</small></td><td>{{ domain.client.user.username }}</td><td>{{ domain.document_root }}</td><td>{{ domain.php_version }}</td><td>{{ render_status(domain.status) }}</td><td class="d-flex gap-2 flex-wrap"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('domains.admin_domain_edit', domain_id=domain.id) }}">Edytuj</a><a class="btn btn-sm btn-outline-secondary" href="{{ url_for('domains.admin_subdomain_create', domain_id=domain.id) }}">Subdomena</a><form method="post" action="{{ url_for('domains.admin_domain_delete', domain_id=domain.id) }}" data-confirm="Usunąć domenę?"><button class="btn btn-sm btn-outline-danger">Usuń</button></form></td></tr>{% endfor %}</tbody></table></div></div>
+<div class="d-flex justify-content-between mb-3">
+	<h1 class="h3">Domeny i subdomeny</h1>
+	<a class="btn btn-primary" href="{{ url_for('domains.admin_domain_create') }}">Nowa domena</a>
+</div>
+
+<div class="surface-card p-3">
+	<div class="table-responsive">
+		<table class="table align-middle">
+			<thead>
+				<tr>
+					<th>Domena</th>
+					<th>Klient</th>
+					<th>Root</th>
+					<th>PHP</th>
+					<th>Status</th>
+					<th>Registrar</th>
+					<th>Akcje</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for domain in domains %}
+					<tr>
+						<td>
+							<div>{{ domain.name }}</div>
+							<small class="text-secondary">{{ domain.subdomains|length }} subdomen</small>
+						</td>
+						<td>{{ domain.client.user.username }}</td>
+						<td>{{ domain.document_root }}</td>
+						<td>{{ domain.php_version }}</td>
+						<td>{{ render_status(domain.status) }}</td>
+						<td>
+							{% if domain.registration %}
+								<div>{{ render_status(domain.registration.status) }}</div>
+								<small class="text-secondary">
+									{{ domain.registration.registrar }}
+									{% if domain.registration.expires_on %}
+										| exp: {{ domain.registration.expires_on.isoformat() }}
+									{% endif %}
+								</small>
+							{% else %}
+								<span class="text-secondary">Brak</span>
+							{% endif %}
+						</td>
+						<td>
+							<div class="d-flex gap-2 flex-wrap mb-2">
+								<a class="btn btn-sm btn-outline-primary" href="{{ url_for('domains.admin_domain_edit', domain_id=domain.id) }}">Edytuj</a>
+								<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('domains.admin_subdomain_create', domain_id=domain.id) }}">Subdomena</a>
+								<form method="post" action="{{ url_for('domains.admin_domain_delete', domain_id=domain.id) }}" data-confirm="Usunac domene?">
+									<button class="btn btn-sm btn-outline-danger">Usun</button>
+								</form>
+							</div>
+							<div class="d-flex gap-2 flex-wrap">
+								{% if domain.registration %}
+									<form method="post" action="{{ url_for('domains.admin_domain_registrar_sync', domain_id=domain.id) }}">
+										<button class="btn btn-sm btn-outline-info">Sync registrar</button>
+									</form>
+									<form method="post" action="{{ url_for('domains.admin_domain_registrar_renew', domain_id=domain.id) }}">
+										<input type="hidden" name="years" value="1">
+										<button class="btn btn-sm btn-outline-success">Renew +1y</button>
+									</form>
+								{% else %}
+									<form method="post" action="{{ url_for('domains.admin_domain_registrar_register', domain_id=domain.id) }}">
+										<input type="hidden" name="years" value="1">
+										<input type="hidden" name="auto_renew" value="1">
+										<button class="btn btn-sm btn-outline-success">Register domain</button>
+									</form>
+								{% endif %}
+							</div>
+						</td>
+					</tr>
+				{% else %}
+					<tr>
+						<td colspan="7" class="text-secondary">Brak domen do wyswietlenia.</td>
+					</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+</div>
 {% endblock %}

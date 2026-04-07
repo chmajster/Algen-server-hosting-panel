@@ -13,7 +13,12 @@
         {% for message in ticket.messages %}
         <div class="border rounded p-3 {% if message.author.has_role('client') %}bg-body{% else %}bg-light{% endif %}">
           <div class="d-flex justify-content-between mb-2">
-            <strong>{{ message.author.full_name }} ({{ message.author.username }})</strong>
+            <strong>
+              {{ message.author.full_name }} ({{ message.author.username }})
+              {% if message.metadata_json and message.metadata_json.get('macro_id') %}
+              <span class="badge text-bg-info">Makro</span>
+              {% endif %}
+            </strong>
             <small class="text-secondary">{{ message.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
           </div>
           <div class="text-break" style="white-space: pre-wrap;">{{ message.message }}</div>
@@ -71,8 +76,22 @@
       <form method="post" enctype="multipart/form-data">
         {{ reply_form.hidden_tag() }}
         <div class="mb-3">
+          {{ reply_form.macro_id.label(class="form-label") }}
+          <div class="input-group">
+            {{ reply_form.macro_id(class="form-select", id="reply-macro-id") }}
+            <button class="btn btn-outline-secondary" type="button" id="macro-preview-btn">Podglad makra</button>
+            <button class="btn btn-outline-primary" type="button" id="macro-insert-btn">Wstaw makro</button>
+          </div>
+          <div class="form-text">Makra sa opcjonalne. Mozesz wyslac tylko odpowiedz niestandardowa.</div>
+          <div class="small text-secondary mt-2" id="macro-preview-error" style="display:none;"></div>
+        </div>
+        <div class="mb-3">
           {{ reply_form.message.label(class="form-label") }}
-          {{ reply_form.message(class="form-control", rows="5", placeholder="Odpowiedz klientowi") }}
+          {{ reply_form.message(class="form-control", rows="7", id="reply-message", placeholder="Odpowiedz klientowi") }}
+        </div>
+        <div class="mb-3" id="macro-preview-box" style="display:none;">
+          <label class="form-label">Podglad makra</label>
+          <pre class="form-control bg-light" id="macro-preview-text" style="white-space: pre-wrap; min-height: 120px;"></pre>
         </div>
         <div class="mb-3">
           <label class="form-label" for="attachment">Zalacznik (opcjonalnie)</label>
@@ -84,4 +103,69 @@
     </div>
   </div>
 </div>
+
+<script>
+(() => {
+  const macroSelect = document.getElementById("reply-macro-id");
+  const previewButton = document.getElementById("macro-preview-btn");
+  const insertButton = document.getElementById("macro-insert-btn");
+  const previewBox = document.getElementById("macro-preview-box");
+  const previewText = document.getElementById("macro-preview-text");
+  const previewError = document.getElementById("macro-preview-error");
+  const replyMessage = document.getElementById("reply-message");
+
+  if (!macroSelect || !previewButton || !insertButton || !previewBox || !previewText || !replyMessage) {
+    return;
+  }
+
+  const fetchPreview = async () => {
+    const macroId = Number(macroSelect.value || 0);
+    previewError.style.display = "none";
+    previewError.textContent = "";
+    if (!macroId) {
+      previewBox.style.display = "none";
+      previewText.textContent = "";
+      return null;
+    }
+
+    const response = await fetch(`{{ url_for('tickets.admin_ticket_macro_preview', ticket_id=ticket.id) }}?macro_id=${macroId}`);
+    if (!response.ok) {
+      previewBox.style.display = "none";
+      previewText.textContent = "";
+      previewError.textContent = "Nie udalo sie wyrenderowac makra.";
+      previewError.style.display = "block";
+      return null;
+    }
+    const payload = await response.json();
+    if (!payload.ok) {
+      previewBox.style.display = "none";
+      previewText.textContent = "";
+      previewError.textContent = payload.error || "Nie udalo sie wyrenderowac makra.";
+      previewError.style.display = "block";
+      return null;
+    }
+
+    previewText.textContent = payload.rendered || "";
+    previewBox.style.display = "block";
+    if (payload.error) {
+      previewError.textContent = `Uwaga: ${payload.error}`;
+      previewError.style.display = "block";
+    }
+    return payload.rendered || "";
+  };
+
+  previewButton.addEventListener("click", () => {
+    void fetchPreview();
+  });
+
+  insertButton.addEventListener("click", async () => {
+    const rendered = await fetchPreview();
+    if (!rendered) {
+      return;
+    }
+    const current = replyMessage.value.trim();
+    replyMessage.value = current ? `${rendered}\n\n${current}` : rendered;
+  });
+})();
+</script>
 {% endblock %}

@@ -24,6 +24,21 @@
     <div class="col-md-4">{{ form.php_version.label(class="form-label") }}{{ form.php_version(class="form-control") }}</div>
     <div class="col-md-4">{{ form.status.label(class="form-label") }}{{ form.status(class="form-select") }}</div>
     <div class="col-md-4 form-check ms-3">{{ form.is_primary(class="form-check-input") }} {{ form.is_primary.label(class="form-check-label") }}</div>
+
+    <div class="col-12 mt-2">
+      <hr>
+      <h2 class="h6 mb-3">Registrar (opcjonalnie)</h2>
+    </div>
+    <div class="col-md-6 form-check ms-3">
+      {{ form.register_in_registrar(class="form-check-input") }} {{ form.register_in_registrar.label(class="form-check-label") }}
+    </div>
+    <div class="col-md-3">{{ form.registration_years.label(class="form-label") }}{{ form.registration_years(class="form-control") }}</div>
+    <div class="col-md-3 form-check ms-3">{{ form.auto_renew(class="form-check-input") }} {{ form.auto_renew.label(class="form-check-label") }}</div>
+    <div class="col-12">
+      {{ form.name_servers.label(class="form-label") }}
+      {{ form.name_servers(class="form-control", rows=3, placeholder="ns1.example-dns.net\nns2.example-dns.net") }}
+      <div class="form-text">Po jednym nameserverze w linii. Puste pole = ustawienia domyslne providera.</div>
+    </div>
     <div class="col-12"><button class="btn btn-primary">{{ form.submit.label.text }}</button></div>
   </form>
 </div>

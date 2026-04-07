@@ -658,4 +658,8 @@ def run_billing_cycle(*, actor: User | None = None) -> int:
         )
         processed += 1
     run_financial_enforcement(actor=actor, as_of=date.today())
+    if bool(current_app.config.get("BILLING_OVERDUE_REMINDERS_ENABLED", True)):
+        from panel.services.overdue_reminders import send_overdue_reminders
+
+        send_overdue_reminders(actor=actor, as_of=date.today())
     return processed

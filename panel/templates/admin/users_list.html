@@ -3,15 +3,100 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">Użytkownicy</h1>
-  <a href="{{ url_for('admin.user_create') }}" class="btn btn-primary">Nowy użytkownik</a>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('admin.user_create') }}" class="btn btn-primary">Nowy użytkownik</a>
+    <a href="{{ url_for('admin.export_dataset', dataset_key='clients', format='csv') }}" class="btn btn-outline-success">Eksport CSV</a>
+    <a href="{{ url_for('admin.export_dataset', dataset_key='clients', format='xlsx') }}" class="btn btn-outline-success">Eksport XLSX</a>
+  </div>
 </div>
+
+<div class="surface-card p-3 mb-3">
+  <div class="row g-3">
+    <div class="col-12 col-xl-6">
+      <form id="users-bulk-lock-form" method="post" action="{{ url_for('admin.users_bulk_lock') }}" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-12 col-md-4">
+          <label class="form-label" for="bulk-user-action">Akcja konta</label>
+          <select id="bulk-user-action" class="form-select" name="action">
+            <option value="lock">Zablokuj konta</option>
+            <option value="unlock">Odblokuj konta</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label" for="bulk-user-reason">Powod</label>
+          <input id="bulk-user-reason" class="form-control" name="reason" type="text" maxlength="255" placeholder="Powod operacji">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label" for="bulk-user-confirm">Potwierdzenie</label>
+          <input id="bulk-user-confirm" class="form-control" name="confirm_text" type="text" maxlength="32" placeholder="POTWIERDZ">
+        </div>
+        <div class="col-12 d-flex gap-2">
+          <button class="btn btn-outline-primary" type="submit" name="dry_run" value="1">Podglad</button>
+          <button class="btn btn-primary" type="submit" name="dry_run" value="0">Wykonaj</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="col-12 col-xl-6">
+      <form id="users-bulk-limits-form" method="post" action="{{ url_for('admin.users_bulk_limits') }}" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-12 col-md-4">
+          <label class="form-label" for="bulk-disk-hard">Disk hard (MB)</label>
+          <input id="bulk-disk-hard" class="form-control" name="disk_hard_mb" type="number" min="1" step="1" placeholder="np. 10240">
+        </div>
+        <div class="col-12 col-md-4">
+          <label class="form-label" for="bulk-inode">Inode limit</label>
+          <input id="bulk-inode" class="form-control" name="inode_limit" type="number" min="1" step="1" placeholder="np. 200000">
+        </div>
+        <div class="col-12 col-md-4">
+          <button class="btn btn-outline-primary w-100" type="submit" name="dry_run" value="1">Podglad</button>
+        </div>
+        <div class="col-12">
+          <button class="btn btn-primary" type="submit" name="dry_run" value="0">Wykonaj aktualizacje limitow</button>
+        </div>
+      </form>
+    </div>
+  </div>
+  <div class="small text-secondary mt-2">Masowa blokada kont wymaga wpisania POTWIERDZ (poza trybem podgladu).</div>
+</div>
+
+{% if bulk_operation %}
+<div class="surface-card p-3 mb-3">
+  <div class="fw-semibold mb-2">Wynik operacji bulk #{{ bulk_operation.id }}</div>
+  {% set summary = bulk_operation.result_summary_json or {} %}
+  <div class="small text-secondary mb-2">
+    Akcja: {{ bulk_operation.operation_type }} | Status: {{ bulk_operation.status }} | Sukces: {{ summary.get('success', 0) }} | Bledy: {{ summary.get('failed', 0) }} | Tryb: {{ 'dry-run' if summary.get('dry_run') else 'wykonanie' }}
+  </div>
+  {% if bulk_items %}
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead><tr><th>Obiekt</th><th>Wynik</th><th>Komunikat</th></tr></thead>
+      <tbody>
+        {% for item in bulk_items %}
+        <tr>
+          <td>{{ item.entity_type }}#{{ item.entity_id }}</td>
+          <td>{% if item.success %}<span class="badge text-bg-success">OK</span>{% else %}<span class="badge text-bg-danger">BLAD</span>{% endif %}</td>
+          <td class="small">{{ item.message or '-' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
 <div class="surface-card p-3">
   <div class="table-responsive">
     <table class="table align-middle">
-      <thead><tr><th>Login</th><th>Rola</th><th>Status</th><th>E-mail</th><th>Akcje</th></tr></thead>
+      <thead><tr><th style="width: 40px;"><input class="form-check-input" type="checkbox" id="bulk-users-select-all"></th><th>Login</th><th>Rola</th><th>Status</th><th>E-mail</th><th>Akcje</th></tr></thead>
       <tbody>
         {% for user in users %}
           <tr>
+            <td>
+              <input class="form-check-input bulk-user-checkbox" type="checkbox" name="user_ids" value="{{ user.id }}" form="users-bulk-lock-form">
+              <input type="hidden" name="user_ids" value="{{ user.id }}" form="users-bulk-limits-form" class="bulk-user-hidden" disabled>
+            </td>
             <td>{{ user.username }}</td>
             <td>{{ user.role.name }}</td>
             <td>{{ render_status(user.status) }}</td>
@@ -35,4 +120,36 @@
     </table>
   </div>
 </div>
+
+<script>
+(() => {
+  const selectAll = document.getElementById('bulk-users-select-all');
+  const checkboxes = Array.from(document.querySelectorAll('.bulk-user-checkbox'));
+  const hiddenInputs = Array.from(document.querySelectorAll('.bulk-user-hidden'));
+  if (!selectAll || !checkboxes.length) {
+    return;
+  }
+
+  const syncHiddenInputs = () => {
+    for (let i = 0; i < checkboxes.length; i += 1) {
+      const checked = checkboxes[i].checked;
+      if (hiddenInputs[i]) {
+        hiddenInputs[i].disabled = !checked;
+      }
+    }
+  };
+
+  selectAll.addEventListener('change', () => {
+    for (const checkbox of checkboxes) {
+      checkbox.checked = selectAll.checked;
+    }
+    syncHiddenInputs();
+  });
+
+  for (const checkbox of checkboxes) {
+    checkbox.addEventListener('change', syncHiddenInputs);
+  }
+  syncHiddenInputs();
+})();
+</script>
 {% endblock %}

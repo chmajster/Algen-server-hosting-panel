@@ -1,0 +1,78 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">{{ title }}</h1>
+  <a class="btn btn-primary" href="{{ url_for('tickets.admin_macro_create') }}">Nowe makro</a>
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <form method="get" class="row g-3 align-items-end">
+    <div class="col-12 col-md-4">
+      <label class="form-label" for="category-filter">Kategoria</label>
+      <select class="form-select" id="category-filter" name="category">
+        <option value="">Wszystkie</option>
+        <option value="billing" {% if category_filter == 'billing' %}selected{% endif %}>Billing</option>
+        <option value="abuse" {% if category_filter == 'abuse' %}selected{% endif %}>Abuse</option>
+        <option value="migration" {% if category_filter == 'migration' %}selected{% endif %}>Migration</option>
+        <option value="technical_support" {% if category_filter == 'technical_support' %}selected{% endif %}>Technical support</option>
+        <option value="cancellation" {% if category_filter == 'cancellation' %}selected{% endif %}>Cancellation</option>
+      </select>
+    </div>
+    <div class="col-12 col-md-2">
+      <button type="submit" class="btn btn-outline-primary w-100">Filtruj</button>
+    </div>
+  </form>
+</div>
+
+<div class="surface-card p-3">
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Nazwa</th>
+          <th>Kategoria</th>
+          <th>Widocznosc</th>
+          <th>Kolejnosc</th>
+          <th>Status</th>
+          <th>Akcje</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for macro in macros %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ macro.name }}</div>
+            <div class="small text-secondary text-truncate" style="max-width: 420px;">{{ macro.body_template[:160] }}{% if macro.body_template|length > 160 %}...{% endif %}</div>
+          </td>
+          <td>{{ macro.category }}</td>
+          <td>{{ macro.visibility_scope }}</td>
+          <td>{{ macro.sort_order }}</td>
+          <td>
+            {% if macro.is_active %}
+            <span class="badge text-bg-success">Aktywne</span>
+            {% else %}
+            <span class="badge text-bg-secondary">Nieaktywne</span>
+            {% endif %}
+          </td>
+          <td class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('tickets.admin_macro_edit', macro_id=macro.id) }}">Edytuj</a>
+            <form method="post" action="{{ url_for('tickets.admin_macro_toggle', macro_id=macro.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-secondary" type="submit">{{ 'Wylacz' if macro.is_active else 'Wlacz' }}</button>
+            </form>
+            <form method="post" action="{{ url_for('tickets.admin_macro_delete', macro_id=macro.id) }}" data-confirm="Usunac to makro ticketowe?">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger" type="submit">Usun</button>
+            </form>
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="6" class="text-center text-secondary py-4">Brak makr ticketowych.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

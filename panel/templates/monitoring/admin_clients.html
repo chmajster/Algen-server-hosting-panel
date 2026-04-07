@@ -2,7 +2,11 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
   <h1 class="h3 mb-0">Monitoring klientow</h1>
-  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('monitoring.index') }}">Powrot do monitoringu systemu</a>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-success btn-sm" href="{{ url_for('admin.export_dataset', dataset_key='resource_usage', format='csv') }}">Eksport CSV</a>
+    <a class="btn btn-outline-success btn-sm" href="{{ url_for('admin.export_dataset', dataset_key='resource_usage', format='xlsx') }}">Eksport XLSX</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('monitoring.index') }}">Powrot do monitoringu systemu</a>
+  </div>
 </div>
 
 <div class="surface-card p-3">

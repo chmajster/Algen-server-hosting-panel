@@ -109,6 +109,7 @@ def register_blueprints(app: Flask) -> None:
     from panel.hosts.routes import hosts_bp
     from panel.mail.routes import mail_bp
     from panel.monitoring.routes import monitoring_bp
+    from panel.ssh.routes import ssh_bp
     from panel.status.routes import status_bp
     from panel.ssl.routes import ssl_bp
     from panel.tickets.routes import tickets_bp
@@ -129,6 +130,7 @@ def register_blueprints(app: Flask) -> None:
         backups_bp,
         files_bp,
         monitoring_bp,
+        ssh_bp,
         status_bp,
         hosts_bp,
         tickets_bp,
@@ -147,6 +149,8 @@ def register_cli(app: Flask) -> None:
     from panel.services.backup_restore import process_restore_job
     from panel.services.client_resources import record_client_resource_samples
     from panel.services.migrations import run_due_migration_jobs
+    from panel.services.overdue_reminders import send_overdue_reminders
+    from panel.services.audit import verify_activity_chain
     from panel.services.smoketest import run_app_smoke_test, write_smoke_test_log
     from panel.services.ticket_sla import escalate_due_tickets
 
@@ -247,6 +251,16 @@ def register_cli(app: Flask) -> None:
             f"przejscia_uslug={summary['service_transitions']}"
         )
 
+    @app.cli.command("send-overdue-reminders")
+    def send_overdue_reminders_command():
+        summary = send_overdue_reminders()
+        db.session.commit()
+        click.echo(
+            "Overdue reminders: "
+            f"evaluated={summary['evaluated']}, sent={summary['sent']}, "
+            f"failed={summary['failed']}, skipped={summary['skipped']}"
+        )
+
     @app.cli.command("run-ticket-escalations")
     def run_ticket_escalations():
         processed = escalate_due_tickets()
@@ -281,6 +295,23 @@ def register_cli(app: Flask) -> None:
         if processed:
             db.session.commit()
         click.echo(f"Przetworzono jobow restore: {processed}")
+
+    @app.cli.command("verify-audit-chain")
+    @click.option("--max-errors", default=100, show_default=True, type=int)
+    def verify_audit_chain(max_errors: int):
+        result = verify_activity_chain(max_errors=max(1, max_errors))
+        click.echo(
+            "Audit chain: "
+            f"valid={result['valid']}, checked={result['checked']}, "
+            f"legacy_rows={result['legacy_rows']}, latest_sequence={result['latest_sequence']}"
+        )
+        if result["errors"]:
+            for item in result["errors"]:
+                click.echo(
+                    f"[ERR] id={item.get('id')} type={item.get('type')} "
+                    f"expected={item.get('expected')} actual={item.get('actual')}"
+                )
+            raise click.ClickException("Wykryto naruszenia integralnosci audytu.")
 
     @app.cli.command("smoke-test")
     @click.option("--source", default="cli", show_default=True)

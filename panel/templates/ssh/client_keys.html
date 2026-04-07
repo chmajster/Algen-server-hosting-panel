@@ -1,0 +1,66 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+	<h1 class="h3 mb-0">Klucze SSH</h1>
+</div>
+
+<div class="surface-card p-3 mb-3">
+	<h2 class="h5 mb-3">Dodaj klucz</h2>
+	<form method="post" action="{{ url_for('ssh.client_key_add') }}" class="row g-3">
+		<div class="col-12 col-md-4">
+			<label class="form-label" for="label">Etykieta</label>
+			<input class="form-control" id="label" name="label" type="text" maxlength="120" placeholder="np. Laptop biurowy">
+		</div>
+		<div class="col-12">
+			<label class="form-label" for="public_key">Public key</label>
+			<textarea class="form-control" id="public_key" name="public_key" rows="4" required placeholder="ssh-ed25519 AAAA... comment"></textarea>
+		</div>
+		<div class="col-12">
+			<button class="btn btn-primary" type="submit">Dodaj klucz</button>
+		</div>
+	</form>
+</div>
+
+<div class="surface-card p-3">
+	<h2 class="h5 mb-3">Aktywne i zapisane klucze</h2>
+	{% if keys %}
+	<div class="table-responsive">
+		<table class="table align-middle mb-0">
+			<thead>
+				<tr>
+					<th>Etykieta</th>
+					<th>Typ</th>
+					<th>Fingerprint</th>
+					<th>Status</th>
+					<th>Dodano</th>
+					<th>Akcje</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for row in keys %}
+				<tr>
+					<td>{{ row.label }}</td>
+					<td>{{ row.key_type }}</td>
+					<td class="text-break"><small>{{ row.fingerprint_sha256 }}</small></td>
+					<td>{{ row.status }}</td>
+					<td>{{ row.created_at.strftime('%Y-%m-%d %H:%M') if row.created_at else '-' }}</td>
+					<td>
+						<div class="d-flex gap-2">
+							<form method="post" action="{{ url_for('ssh.client_key_toggle', key_id=row.id) }}">
+								<button class="btn btn-sm btn-outline-secondary" type="submit">{{ 'Wylacz' if row.status == 'active' else 'Wlacz' }}</button>
+							</form>
+							<form method="post" action="{{ url_for('ssh.client_key_delete', key_id=row.id) }}" data-confirm="Usunac ten klucz SSH?">
+								<button class="btn btn-sm btn-outline-danger" type="submit">Usun</button>
+							</form>
+						</div>
+					</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+	{% else %}
+	<p class="text-secondary mb-0">Brak zapisanych kluczy SSH.</p>
+	{% endif %}
+</div>
+{% endblock %}

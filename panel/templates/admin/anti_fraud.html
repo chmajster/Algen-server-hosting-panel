@@ -1,0 +1,109 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Anti-fraud</h1>
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <form method="get" class="row g-2 align-items-end">
+    <div class="col-12 col-md-4">
+      <label class="form-label">Poziom ryzyka</label>
+      <select class="form-select" name="risk">
+        <option value="all" {% if risk_filter == 'all' %}selected{% endif %}>Wszystkie</option>
+        <option value="low" {% if risk_filter == 'low' %}selected{% endif %}>Low</option>
+        <option value="medium" {% if risk_filter == 'medium' %}selected{% endif %}>Medium</option>
+        <option value="high" {% if risk_filter == 'high' %}selected{% endif %}>High</option>
+      </select>
+    </div>
+    <div class="col-12 col-md-4">
+      <label class="form-label">Stan</label>
+      <select class="form-select" name="state">
+        <option value="open" {% if state_filter == 'open' %}selected{% endif %}>Do review</option>
+        <option value="reviewed" {% if state_filter == 'reviewed' %}selected{% endif %}>Przejrzane</option>
+        <option value="blocked" {% if state_filter == 'blocked' %}selected{% endif %}>Zablokowane</option>
+        <option value="all" {% if state_filter == 'all' %}selected{% endif %}>Wszystkie</option>
+      </select>
+    </div>
+    <div class="col-12 col-md-4 d-grid">
+      <button class="btn btn-outline-primary">Filtruj</button>
+    </div>
+  </form>
+</div>
+
+<div class="surface-card p-3">
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Konto</th>
+          <th>IP</th>
+          <th>Score</th>
+          <th>Poziom</th>
+          <th>Powody</th>
+          <th>Akcje</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for check in checks %}
+          <tr>
+            <td>{{ check.created_at.strftime('%Y-%m-%d %H:%M') if check.created_at else '-' }}</td>
+            <td>
+              <div>{{ check.username }}</div>
+              <small class="text-secondary">{{ check.email }}</small>
+              {% if check.user and not check.user.is_active_account %}
+                <div><span class="badge text-bg-warning">konto zablokowane</span></div>
+              {% endif %}
+            </td>
+            <td>{{ check.ip_address or '-' }}</td>
+            <td>{{ check.score }}</td>
+            <td>
+              {% if check.risk_level == 'high' %}
+                <span class="badge text-bg-danger">high</span>
+              {% elif check.risk_level == 'medium' %}
+                <span class="badge text-bg-warning">medium</span>
+              {% else %}
+                <span class="badge text-bg-secondary">low</span>
+              {% endif %}
+              {% if check.reviewed_at %}
+                <span class="badge text-bg-success">reviewed</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if check.reasons_json %}
+                {% for reason in check.reasons_json %}
+                  <div class="small">- {{ reason }}</div>
+                {% endfor %}
+              {% else %}
+                <span class="text-secondary">Brak</span>
+              {% endif %}
+              {% if check.review_note %}
+                <div class="small text-secondary mt-1">Notatka: {{ check.review_note }}</div>
+              {% endif %}
+            </td>
+            <td>
+              <div class="d-flex flex-wrap gap-2">
+                {% if not check.reviewed_at %}
+                  <form method="post" action="{{ url_for('admin.anti_fraud_review', check_id=check.id) }}">
+                    <input type="hidden" name="note" value="Sprawdzone przez administratora">
+                    <button class="btn btn-sm btn-outline-primary">Oznacz reviewed</button>
+                  </form>
+                {% endif %}
+                {% if check.user and not check.user.is_active_account %}
+                  <form method="post" action="{{ url_for('admin.anti_fraud_unlock', check_id=check.id) }}">
+                    <button class="btn btn-sm btn-outline-success">Odblokuj konto</button>
+                  </form>
+                {% endif %}
+              </div>
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td colspan="7" class="text-secondary">Brak wpisow anti-fraud dla wybranego filtra.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from datetime import date, timedelta
 from decimal import Decimal
 import io
@@ -8,12 +9,18 @@ from pathlib import Path
 from panel.extensions import db
 from panel.models import (
     AccountSuspension,
+    ActivityLog,
+    ApprovalRequest,
     AutomationExecution,
     AutomationRule,
     BillingCycle,
     BillingTransaction,
+    BulkOperation,
     Client,
     ClientService,
+    ClientSSHKey,
+    DomainRegistration,
+    ExportJob,
     ApiToken,
     Backup,
     BackupRestoreJob,
@@ -24,12 +31,17 @@ from panel.models import (
     MigrationJob,
     OnlinePayment,
     OperatorPermission,
+    OverdueReminder,
+    RegistrationFraudCheck,
+    Role,
     SSLCertificate,
     ServicePlan,
     Subdomain,
     SystemSetting,
     Ticket,
     TicketAttachment,
+    TicketMacro,
+    TicketMacroUsage,
     TicketMessage,
     TwoFactorBackupCode,
     User,
@@ -39,6 +51,8 @@ from panel.models import (
 )
 from panel.seed import seed_defaults
 from panel.services.account_security import generate_backup_codes, hash_session_token, issue_user_session
+from panel.services.overdue_reminders import send_overdue_reminders
+from panel.services.audit import log_activity, verify_activity_chain
 from panel.services.client_apache import client_apache_resource_limits
 from panel.services.api_tokens import issue_api_token
 from panel.services.billing import adjust_balance, update_client_financial_status_for_date
@@ -102,6 +116,51 @@ def test_public_registration_creates_client_with_selected_plan(client, app):
         )
         assert hosting_service is not None
         assert hosting_service.service_plan_id == plan_id
+
+
+def test_high_risk_registration_is_blocked_by_anti_fraud(client, app):
+    with app.app_context():
+        plan = ServicePlan(
+            name="Anti Fraud Plan",
+            code="anti-fraud-plan",
+            description="Plan testowy",
+            monthly_price=Decimal("29.00"),
+            daily_price=Decimal("1.00"),
+            yearly_price=Decimal("290.00"),
+            limits_json={"cpu_cores": 1, "ram_mb": 1024},
+            is_active=True,
+        )
+        db.session.add(plan)
+        db.session.commit()
+        plan_id = plan.id
+
+    response = client.post(
+        "/auth/register",
+        data={
+            "first_name": "Temp",
+            "last_name": "Temp",
+            "username": "spam_bot_99123",
+            "email": "temp@mailinator.com",
+            "password": "StrongPass1!",
+            "password_confirm": "StrongPass1!",
+            "plan_id": plan_id,
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert "/auth/login" in response.headers.get("Location", "")
+
+    with app.app_context():
+        user = User.query.filter_by(username="spam_bot_99123").first()
+        assert user is not None
+        assert user.is_active_account is False
+        assert user.status == "inactive"
+        assert "anti-fraud" in (user.manual_lock_reason or "").lower()
+
+        check = RegistrationFraudCheck.query.filter_by(user_id=user.id).first()
+        assert check is not None
+        assert check.blocked is True
+        assert check.risk_level == "high"
 
 
 def test_client_apache_resource_limits_follow_selected_plan(app):
@@ -709,6 +768,174 @@ def test_admin_reports_page_shows_financial_metrics(client):
     assert "ARPU" in body
     assert "Churn" in body
     assert "Overdue" in body
+    assert "Prognoza 3M" in body
+    assert "Przypomnienia 30d" in body
+
+
+def test_send_overdue_reminders_creates_deduplicated_log_entries(app):
+    app.config["BILLING_OVERDUE_REMINDER_OFFSETS"] = "0"
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+        service = ClientService(
+            client=client_profile,
+            name="Overdue Reminder Service",
+            service_type="hosting",
+            status="pending_payment",
+            starts_on=date.today() - timedelta(days=35),
+            billing_period="monthly",
+            recurring_amount=Decimal("49.00"),
+            auto_suspend=True,
+            auto_resume=True,
+        )
+        cycle = BillingCycle(
+            client_service=service,
+            cycle_type="monthly",
+            amount=Decimal("49.00"),
+            due_date=date.today(),
+            status="overdue",
+        )
+        db.session.add_all([service, cycle])
+        db.session.commit()
+
+        first_summary = send_overdue_reminders(as_of=date.today())
+        db.session.commit()
+        second_summary = send_overdue_reminders(as_of=date.today())
+        db.session.commit()
+
+        reminders = OverdueReminder.query.filter_by(billing_cycle_id=cycle.id).all()
+        assert first_summary["sent"] >= 1
+        assert second_summary["sent"] == 0
+        assert len(reminders) == 1
+        assert reminders[0].status == "sent"
+
+
+def test_admin_can_trigger_overdue_reminders_from_reports(client):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.post("/admin/reports/reminders/send", data={}, follow_redirects=False)
+    assert response.status_code == 302
+
+
+def test_admin_can_review_and_unlock_anti_fraud_alert(client, app):
+    with app.app_context():
+        role = Role.query.filter_by(name="client").first()
+        assert role is not None
+        user = User(
+            role=role,
+            username="fraud_locked_user",
+            email="fraud-locked@example.test",
+            first_name="Fraud",
+            last_name="Locked",
+            status="inactive",
+            is_active_account=False,
+            manual_lock_reason="Automatyczna blokada: wysoki wynik anti-fraud",
+        )
+        user.set_password("StrongPass1!")
+        profile = Client(user=user, company_name="Fraud Co")
+        check = RegistrationFraudCheck(
+            user=user,
+            username=user.username,
+            email=user.email,
+            ip_address="127.0.0.1",
+            score=92,
+            risk_level="high",
+            blocked=True,
+            reasons_json=["Adres e-mail nalezy do domeny tymczasowej."],
+        )
+        db.session.add_all([user, profile, check])
+        db.session.commit()
+        check_id = check.id
+        user_id = user.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+
+    page_response = client.get("/admin/security/anti-fraud", follow_redirects=False)
+    assert page_response.status_code == 200
+    assert "fraud_locked_user" in page_response.get_data(as_text=True)
+
+    review_response = client.post(
+        f"/admin/security/anti-fraud/{check_id}/review",
+        data={"note": "Manualny przeglad"},
+        follow_redirects=False,
+    )
+    assert review_response.status_code == 302
+
+    unlock_response = client.post(
+        f"/admin/security/anti-fraud/{check_id}/unlock",
+        data={},
+        follow_redirects=False,
+    )
+    assert unlock_response.status_code == 302
+
+    with app.app_context():
+        user = User.query.get(user_id)
+        assert user is not None
+        assert user.is_active_account is True
+        assert user.status == "active"
+
+        check = RegistrationFraudCheck.query.get(check_id)
+        assert check is not None
+        assert check.reviewed_at is not None
+
+
+def test_admin_can_export_clients_csv_and_log_job(client, app):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=False,
+    )
+    response = client.get("/admin/exports/clients?format=csv", follow_redirects=False)
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert "client_id" in body
+    assert "username" in body
+
+    with app.app_context():
+        job = ExportJob.query.order_by(ExportJob.id.desc()).first()
+        assert job is not None
+        assert job.dataset == "clients"
+        assert job.format == "csv"
+        assert job.status == "completed"
+        assert job.row_count >= 1
+
+
+def test_admin_can_export_tickets_xlsx(client, app):
+    with app.app_context():
+        client_user = User.query.filter_by(username="client").first()
+        assert client_user is not None
+        ticket = Ticket(
+            client=client_user.client_profile,
+            created_by=client_user,
+            subject="Export ticket",
+            category="hosting",
+            priority="normal",
+            status="open",
+        )
+        db.session.add(ticket)
+        db.session.commit()
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=False,
+    )
+    response = client.get("/admin/exports/tickets?format=xlsx", follow_redirects=False)
+    assert response.status_code == 200
+    assert "spreadsheetml.sheet" in (response.content_type or "")
+
+    with app.app_context():
+        job = ExportJob.query.order_by(ExportJob.id.desc()).first()
+        assert job is not None
+        assert job.dataset == "tickets"
+        assert job.format == "xlsx"
 
 
 def test_admin_dashboard_loads(client):
@@ -784,6 +1011,307 @@ def test_client_and_operator_can_communicate_via_tickets(client, app):
         assert len(messages) == 2
         assert messages[0].author.username == "client"
         assert messages[1].author.username == "operator"
+
+
+def test_admin_can_create_ticket_macro(client, app):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        "/admin/tickets/macros/new",
+        data={
+            "name": "Billing Reminder",
+            "category": "billing",
+            "visibility_scope": "all_staff",
+            "subject_template": "Przypomnienie o platnosci",
+            "body_template": "Witaj {{client_full_name}}, numer ticketu: {{ticket_id}}.",
+            "sort_order": "10",
+            "is_active": "y",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "Makro zostalo utworzone" in response.get_data(as_text=True)
+
+    with app.app_context():
+        macro = TicketMacro.query.filter_by(name="Billing Reminder").first()
+        assert macro is not None
+        assert macro.category == "billing"
+        assert macro.is_active is True
+
+
+def test_operator_reply_can_use_ticket_macro_and_track_usage(client, app):
+    with app.app_context():
+        admin_user = User.query.filter_by(username="admin").first()
+        assert admin_user is not None
+        macro = TicketMacro(
+            name="Support Greeting",
+            category="technical_support",
+            visibility_scope="all_staff",
+            body_template="Witaj {{client_full_name}}, pracujemy nad zgloszeniem {{ticket_id}}.",
+            sort_order=1,
+            is_active=True,
+            created_by=admin_user,
+            updated_by=admin_user,
+        )
+        db.session.add(macro)
+        db.session.commit()
+        macro_id = macro.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+    create_response = client.post(
+        "/client/tickets/new",
+        data={
+            "subject": "Problem z SSL",
+            "category": "hosting",
+            "priority": "normal",
+            "message": "Prosze o pomoc.",
+        },
+        follow_redirects=True,
+    )
+    assert create_response.status_code == 200
+
+    with app.app_context():
+        ticket = Ticket.query.order_by(Ticket.id.desc()).first()
+        assert ticket is not None
+        ticket_id = ticket.id
+
+    client.get("/auth/logout", follow_redirects=True)
+    client.post(
+        "/auth/login",
+        data={"username": "operator", "password": "Operator123!"},
+        follow_redirects=True,
+    )
+    preview_response = client.get(f"/admin/tickets/{ticket_id}/macro-preview?macro_id={macro_id}")
+    preview_payload = preview_response.get_json()
+    assert preview_response.status_code == 200
+    assert preview_payload is not None
+    assert preview_payload.get("ok") is True
+    assert "TKT-" in (preview_payload.get("rendered") or "")
+
+    reply_response = client.post(
+        f"/admin/tickets/{ticket_id}",
+        data={
+            "reply-macro_id": str(macro_id),
+            "reply-message": "Dodatkowa notatka od operatora.",
+            "reply-submit": "1",
+        },
+        follow_redirects=True,
+    )
+    assert reply_response.status_code == 200
+    assert "Odpowiedz zostala wyslana" in reply_response.get_data(as_text=True)
+
+    with app.app_context():
+        latest_message = TicketMessage.query.filter_by(ticket_id=ticket_id).order_by(TicketMessage.id.desc()).first()
+        assert latest_message is not None
+        assert "Dodatkowa notatka od operatora" in latest_message.message
+        assert "TKT-" in latest_message.message
+        usage = TicketMacroUsage.query.filter_by(ticket_id=ticket_id, macro_id=macro_id).first()
+        assert usage is not None
+        assert usage.ticket_message_id == latest_message.id
+
+
+def test_operator_can_reply_with_macro_only_without_custom_message(client, app):
+    with app.app_context():
+        admin_user = User.query.filter_by(username="admin").first()
+        assert admin_user is not None
+        macro = TicketMacro(
+            name="Macro Only",
+            category="technical_support",
+            visibility_scope="all_staff",
+            body_template="Witaj {{client_full_name}}, ticket {{ticket_id}} jest obslugiwany.",
+            sort_order=2,
+            is_active=True,
+            created_by=admin_user,
+            updated_by=admin_user,
+        )
+        db.session.add(macro)
+        db.session.commit()
+        macro_id = macro.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+    create_response = client.post(
+        "/client/tickets/new",
+        data={
+            "subject": "Makro bez tresci",
+            "category": "hosting",
+            "priority": "normal",
+            "message": "Prosze o aktualizacje statusu.",
+        },
+        follow_redirects=True,
+    )
+    assert create_response.status_code == 200
+
+    with app.app_context():
+        ticket = Ticket.query.order_by(Ticket.id.desc()).first()
+        assert ticket is not None
+        ticket_id = ticket.id
+
+    client.get("/auth/logout", follow_redirects=True)
+    client.post(
+        "/auth/login",
+        data={"username": "operator", "password": "Operator123!"},
+        follow_redirects=True,
+    )
+    reply_response = client.post(
+        f"/admin/tickets/{ticket_id}",
+        data={
+            "reply-macro_id": str(macro_id),
+            "reply-message": "",
+            "reply-submit": "1",
+        },
+        follow_redirects=True,
+    )
+    assert reply_response.status_code == 200
+    assert "Odpowiedz zostala wyslana" in reply_response.get_data(as_text=True)
+
+    with app.app_context():
+        latest_message = TicketMessage.query.filter_by(ticket_id=ticket_id).order_by(TicketMessage.id.desc()).first()
+        assert latest_message is not None
+        assert "ticket" in latest_message.message.lower()
+        assert "TKT-" in latest_message.message
+
+
+def test_admin_bulk_service_plan_change_supports_preview_and_execute(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+        old_plan = ServicePlan(
+            name="Bulk Old Plan",
+            code="bulk-old-plan",
+            monthly_price=Decimal("39.00"),
+            daily_price=Decimal("1.50"),
+            yearly_price=Decimal("390.00"),
+            is_active=True,
+        )
+        new_plan = ServicePlan(
+            name="Bulk New Plan",
+            code="bulk-new-plan",
+            monthly_price=Decimal("59.00"),
+            daily_price=Decimal("2.00"),
+            yearly_price=Decimal("590.00"),
+            is_active=True,
+        )
+        service = ClientService(
+            client=client_profile,
+            plan=old_plan,
+            name="Bulk Hosting",
+            service_type="hosting",
+            status="active",
+            starts_on=date.today(),
+            billing_period="monthly",
+            recurring_amount=Decimal("39.00"),
+            auto_suspend=True,
+            auto_resume=True,
+        )
+        db.session.add_all([old_plan, new_plan, service])
+        db.session.commit()
+        service_id = service.id
+        new_plan_id = new_plan.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+
+    dry_run_response = client.post(
+        "/admin/billing/services/bulk",
+        data={
+            "action": "plan_change",
+            "service_ids": [str(service_id)],
+            "target_plan_id": str(new_plan_id),
+            "dry_run": "1",
+        },
+        follow_redirects=False,
+    )
+    assert dry_run_response.status_code == 302
+
+    with app.app_context():
+        service = ClientService.query.get(service_id)
+        assert service is not None
+        assert service.service_plan_id != new_plan_id
+
+    execute_response = client.post(
+        "/admin/billing/services/bulk",
+        data={
+            "action": "plan_change",
+            "service_ids": [str(service_id)],
+            "target_plan_id": str(new_plan_id),
+            "confirm_text": "POTWIERDZ",
+            "dry_run": "0",
+        },
+        follow_redirects=False,
+    )
+    assert execute_response.status_code == 302
+
+    with app.app_context():
+        service = ClientService.query.get(service_id)
+        assert service is not None
+        assert service.service_plan_id == new_plan_id
+        operation = BulkOperation.query.order_by(BulkOperation.id.desc()).first()
+        assert operation is not None
+        assert operation.operation_type == "service_plan_change"
+
+
+def test_admin_bulk_user_lock_supports_preview_and_execute(client, app):
+    with app.app_context():
+        user = User.query.filter_by(username="client").first()
+        assert user is not None
+        user_id = user.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+
+    dry_run_response = client.post(
+        "/admin/users/bulk-lock",
+        data={
+            "action": "lock",
+            "user_ids": [str(user_id)],
+            "reason": "Test lock",
+            "dry_run": "1",
+        },
+        follow_redirects=False,
+    )
+    assert dry_run_response.status_code == 302
+
+    with app.app_context():
+        user = User.query.get(user_id)
+        assert user is not None
+        assert user.is_active_account is True
+        assert user.status == "active"
+
+    execute_response = client.post(
+        "/admin/users/bulk-lock",
+        data={
+            "action": "lock",
+            "user_ids": [str(user_id)],
+            "reason": "Test lock",
+            "confirm_text": "POTWIERDZ",
+            "dry_run": "0",
+        },
+        follow_redirects=False,
+    )
+    assert execute_response.status_code == 302
+
+    with app.app_context():
+        user = User.query.get(user_id)
+        assert user is not None
+        assert user.is_active_account is False
+        assert user.status == "inactive"
 
 
 def test_ticket_notifications_send_to_staff_and_client(client, app, monkeypatch):
@@ -1035,6 +1563,63 @@ def test_admin_domain_create_provisions_expected_directory_tree(client, app):
         domain = Domain.query.filter_by(name="example.test").first()
         assert domain is not None
         assert domain.document_root == str(domain_root / "public")
+
+
+def test_admin_can_register_and_renew_domain_in_registrar(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+        domain = Domain(
+            client=client_profile,
+            name="registrar-example.test",
+            document_root="/tmp/registrar-example/public",
+            php_version="8.3",
+            status="active",
+        )
+        db.session.add(domain)
+        db.session.commit()
+        domain_id = domain.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+
+    register_response = client.post(
+        f"/admin/domains/{domain_id}/registrar/register",
+        data={"years": "1", "auto_renew": "1"},
+        follow_redirects=False,
+    )
+    assert register_response.status_code == 302
+
+    with app.app_context():
+        registration = DomainRegistration.query.filter_by(domain_id=domain_id).first()
+        assert registration is not None
+        assert registration.status == "active"
+        assert registration.expires_on is not None
+        previous_expiry = registration.expires_on
+
+    renew_response = client.post(
+        f"/admin/domains/{domain_id}/registrar/renew",
+        data={"years": "2"},
+        follow_redirects=False,
+    )
+    assert renew_response.status_code == 302
+
+    sync_response = client.post(
+        f"/admin/domains/{domain_id}/registrar/sync",
+        data={},
+        follow_redirects=False,
+    )
+    assert sync_response.status_code == 302
+
+    with app.app_context():
+        registration = DomainRegistration.query.filter_by(domain_id=domain_id).first()
+        assert registration is not None
+        assert registration.expires_on is not None
+        assert registration.expires_on > previous_expiry
+        assert registration.last_synced_at is not None
 
 
 def test_admin_domain_create_rejects_invalid_domain_name(client, app):
@@ -1487,6 +2072,264 @@ def test_client_can_request_backup_restore(client, app):
         assert job is not None
         assert job.backup_id == backup_id
         assert job.status == "queued"
+
+
+def test_domain_delete_requires_approval_and_executes_after_second_user_approval(client, app):
+    app.config["APPROVALS_ENABLED"] = True
+    app.config["APPROVALS_RISKY_ACTIONS"] = "domains.delete"
+    app.config["APPROVALS_REQUIRED_COUNTS"] = "domains.delete=1"
+    app.config["APPROVALS_ALLOW_SELF_APPROVAL"] = False
+
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+        domain = Domain(
+            client=client_profile,
+            name="approval-delete.example.test",
+            document_root="/var/www/approval-delete",
+            php_version="8.3",
+            status="active",
+            is_primary=False,
+        )
+        db.session.add(domain)
+        db.session.commit()
+        domain_id = domain.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+
+    delete_response = client.post(
+        f"/admin/domains/{domain_id}/delete",
+        data={},
+        follow_redirects=False,
+    )
+    assert delete_response.status_code == 302
+
+    with app.app_context():
+        domain = Domain.query.get(domain_id)
+        assert domain is not None
+        approval = ApprovalRequest.query.filter_by(action_key="domains.delete", target_id=str(domain_id)).first()
+        assert approval is not None
+        assert approval.status == "pending"
+        approval_id = approval.id
+
+    self_approve_response = client.post(
+        f"/admin/security/approvals/{approval_id}/approve",
+        data={},
+        follow_redirects=True,
+    )
+    assert self_approve_response.status_code == 200
+    assert "Self-approval" in self_approve_response.get_data(as_text=True)
+
+    with app.app_context():
+        approval = ApprovalRequest.query.get(approval_id)
+        assert approval is not None
+        assert approval.status == "pending"
+
+    client.get("/auth/logout", follow_redirects=True)
+    client.post(
+        "/auth/login",
+        data={"username": "operator", "password": "Operator123!"},
+        follow_redirects=True,
+    )
+
+    approve_response = client.post(
+        f"/admin/security/approvals/{approval_id}/approve",
+        data={},
+        follow_redirects=False,
+    )
+    assert approve_response.status_code == 302
+
+    with app.app_context():
+        approval = ApprovalRequest.query.get(approval_id)
+        assert approval is not None
+        assert approval.status == "executed"
+        assert Domain.query.get(domain_id) is None
+
+
+def test_admin_restore_requires_approval_and_executes_after_approval(client, app):
+    app.config["APPROVALS_ENABLED"] = True
+    app.config["APPROVALS_RISKY_ACTIONS"] = "backups.restore"
+    app.config["APPROVALS_REQUIRED_COUNTS"] = "backups.restore=1"
+    app.config["APPROVALS_ALLOW_SELF_APPROVAL"] = False
+
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+
+        backup_root = Path(app.config["BACKUP_ROOT"])
+        source_dir = backup_root / "approval-restore-src"
+        source_dir.mkdir(parents=True, exist_ok=True)
+        (source_dir / "index.txt").write_text("ok", encoding="utf-8")
+
+        backup = Backup(
+            client=client_profile,
+            backup_type="files",
+            status="completed",
+            storage_path=str(source_dir),
+        )
+        db.session.add(backup)
+        db.session.commit()
+        backup_id = backup.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+
+    response = client.post(
+        f"/admin/backups/{backup_id}/restore",
+        data={},
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+    with app.app_context():
+        approval = ApprovalRequest.query.filter_by(action_key="backups.restore", target_id=str(backup_id)).first()
+        assert approval is not None
+        assert approval.status == "pending"
+        assert BackupRestoreJob.query.filter_by(backup_id=backup_id).count() == 0
+        approval_id = approval.id
+
+    client.get("/auth/logout", follow_redirects=True)
+    client.post(
+        "/auth/login",
+        data={"username": "operator", "password": "Operator123!"},
+        follow_redirects=True,
+    )
+    approve_response = client.post(
+        f"/admin/security/approvals/{approval_id}/approve",
+        data={},
+        follow_redirects=False,
+    )
+    assert approve_response.status_code == 302
+
+    with app.app_context():
+        approval = ApprovalRequest.query.get(approval_id)
+        assert approval is not None
+        assert approval.status == "executed"
+        job = BackupRestoreJob.query.filter_by(backup_id=backup_id).order_by(BackupRestoreJob.id.desc()).first()
+        assert job is not None
+        assert job.status in {"completed", "queued"}
+
+
+def test_audit_chain_detects_tampering(app):
+    with app.app_context():
+        actor = User.query.filter_by(username="admin").first()
+        assert actor is not None
+
+        log_activity(
+            "test.audit_chain.first",
+            "audit_test",
+            "Pierwszy wpis chain",
+            entity_id="audit-1",
+            actor=actor,
+            metadata={"step": 1},
+        )
+        log_activity(
+            "test.audit_chain.second",
+            "audit_test",
+            "Drugi wpis chain",
+            entity_id="audit-2",
+            actor=actor,
+            metadata={"step": 2},
+        )
+        db.session.commit()
+
+        result_ok = verify_activity_chain(max_errors=20)
+        assert result_ok["valid"] is True
+        assert result_ok["checked"] >= 2
+
+        row = (
+            ActivityLog.query.filter_by(action="test.audit_chain.second")
+            .order_by(ActivityLog.id.desc())
+            .first()
+        )
+        assert row is not None
+        row.description = "Zmieniona tresc"
+        db.session.commit()
+
+        result_broken = verify_activity_chain(max_errors=20)
+        assert result_broken["valid"] is False
+        assert any(item.get("type") == "hash_mismatch" for item in result_broken["errors"])
+
+
+def test_client_can_manage_ssh_keys_and_sync_authorized_keys(client, app):
+    with app.app_context():
+        client_user = User.query.filter_by(username="client").first()
+        assert client_user is not None
+        client_profile = client_user.client_profile
+        assert client_profile is not None
+        client_id = client_profile.id
+
+    key_payload = base64.b64encode(b"pytest-ssh-key-material-0001").decode("ascii")
+    public_key = f"ssh-ed25519 {key_payload} pytest@local"
+
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+
+    add_response = client.post(
+        "/client/ssh-keys/add",
+        data={"label": "Pytest key", "public_key": public_key},
+        follow_redirects=True,
+    )
+    assert add_response.status_code == 200
+    assert "Klucz SSH zostal dodany" in add_response.get_data(as_text=True)
+
+    with app.app_context():
+        row = ClientSSHKey.query.filter_by(client_id=client_id).first()
+        assert row is not None
+        assert row.status == "active"
+        assert row.fingerprint_sha256.startswith("SHA256:")
+        key_id = row.id
+        username = row.client.user.username if row.client and row.client.user else f"client-{row.client_id}"
+
+        authorized_keys_path = Path(app.config["CLIENT_HOME_ROOT"]) / username / ".ssh" / "authorized_keys"
+        assert authorized_keys_path.exists()
+        content = authorized_keys_path.read_text(encoding="utf-8")
+        assert "ssh-ed25519" in content
+
+    toggle_response = client.post(
+        f"/client/ssh-keys/{key_id}/toggle",
+        data={},
+        follow_redirects=True,
+    )
+    assert toggle_response.status_code == 200
+
+    with app.app_context():
+        row = ClientSSHKey.query.get(key_id)
+        assert row is not None
+        assert row.status == "disabled"
+        username = row.client.user.username if row.client and row.client.user else f"client-{row.client_id}"
+        authorized_keys_path = Path(app.config["CLIENT_HOME_ROOT"]) / username / ".ssh" / "authorized_keys"
+        assert authorized_keys_path.read_text(encoding="utf-8") == ""
+
+    client.get("/auth/logout", follow_redirects=True)
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    admin_page = client.get(f"/admin/ssh-keys?client_id={client_id}", follow_redirects=False)
+    assert admin_page.status_code == 200
+    assert "Pytest key" in admin_page.get_data(as_text=True)
+
+    delete_response = client.post(
+        f"/admin/ssh-keys/{key_id}/delete",
+        data={},
+        follow_redirects=True,
+    )
+    assert delete_response.status_code == 200
+
+    with app.app_context():
+        assert ClientSSHKey.query.get(key_id) is None
 
 
 def test_api_token_allows_api_ticket_flow(client, app):

@@ -1,0 +1,69 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between mb-3">
+	<h1 class="h3">Integralnosc audytu</h1>
+	<a class="btn btn-outline-secondary" href="{{ url_for('admin.approvals') }}">Wnioski akceptacji</a>
+</div>
+
+<div class="row g-3 mb-3">
+	<div class="col-12 col-md-3">
+		<div class="surface-card p-3 h-100">
+			<div class="small text-secondary">Status chain</div>
+			<div class="h4 mb-0 {{ 'text-success' if result.valid else 'text-danger' }}">{{ 'OK' if result.valid else 'ERROR' }}</div>
+		</div>
+	</div>
+	<div class="col-12 col-md-3">
+		<div class="surface-card p-3 h-100">
+			<div class="small text-secondary">Sprawdzone rekordy</div>
+			<div class="h4 mb-0">{{ result.checked }}</div>
+		</div>
+	</div>
+	<div class="col-12 col-md-3">
+		<div class="surface-card p-3 h-100">
+			<div class="small text-secondary">Legacy rekordy</div>
+			<div class="h4 mb-0">{{ result.legacy_rows }}</div>
+		</div>
+	</div>
+	<div class="col-12 col-md-3">
+		<div class="surface-card p-3 h-100">
+			<div class="small text-secondary">Najnowsza sekwencja</div>
+			<div class="h4 mb-0">{{ result.latest_sequence }}</div>
+		</div>
+	</div>
+</div>
+
+<div class="surface-card p-3 mb-3">
+	<h2 class="h5">Hash head</h2>
+	<p class="text-break mb-0">{{ result.latest_hash or '-' }}</p>
+</div>
+
+<div class="surface-card p-3">
+	<h2 class="h5">Bledy chain</h2>
+	{% if result.errors %}
+	<div class="table-responsive">
+		<table class="table align-middle mb-0">
+			<thead>
+				<tr>
+					<th>Log ID</th>
+					<th>Typ</th>
+					<th>Expected</th>
+					<th>Actual</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for item in result.errors %}
+				<tr>
+					<td>{{ item.id }}</td>
+					<td>{{ item.type }}</td>
+					<td class="text-break">{{ item.expected }}</td>
+					<td class="text-break">{{ item.actual }}</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+	{% else %}
+	<p class="text-secondary mb-0">Brak naruszen integralnosci.</p>
+	{% endif %}
+</div>
+{% endblock %}

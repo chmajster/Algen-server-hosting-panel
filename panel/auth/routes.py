@@ -27,6 +27,7 @@ from panel.services.account_security import (
     revoke_all_sessions_for_user,
     revoke_session,
 )
+from panel.services.anti_fraud import assess_registration_risk, create_registration_fraud_check
 from panel.services.audit import log_activity
 from panel.services.billing import schedule_initial_cycle
 from panel.services.mailer import send_plain_email
@@ -292,6 +293,29 @@ def register():
         db.session.flush()
         schedule_initial_cycle(service)
 
+        risk_assessment = assess_registration_risk(
+            username=username,
+            email=email,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            ip_address=get_client_ip(),
+            user_agent=request.headers.get("User-Agent"),
+        )
+        if risk_assessment.blocked:
+            user.is_active_account = False
+            user.status = "inactive"
+            user.manual_lock_reason = "Automatyczna blokada: wysoki wynik anti-fraud"
+
+        create_registration_fraud_check(
+            user=user,
+            username=username,
+            email=email,
+            ip_address=get_client_ip(),
+            user_agent=request.headers.get("User-Agent"),
+            assessment=risk_assessment,
+            metadata={"plan_id": plan.id, "plan_code": plan.code},
+        )
+
         log_activity(
             "auth.register",
             "user",
@@ -299,11 +323,25 @@ def register():
             entity_id=user.id,
             actor=user,
             client=client,
-            metadata={"plan_id": plan.id, "plan_code": plan.code},
+            metadata={
+                "plan_id": plan.id,
+                "plan_code": plan.code,
+                "fraud_score": risk_assessment.score,
+                "fraud_level": risk_assessment.risk_level,
+                "fraud_blocked": risk_assessment.blocked,
+            },
         )
         db.session.commit()
 
-        flash("Konto zostalo utworzone.", "success")
+        if risk_assessment.blocked:
+            flash("Konto zostalo utworzone, ale wymaga recznej weryfikacji anti-fraud przed pierwszym logowaniem.", "warning")
+            return redirect(url_for("auth.login"))
+
+        if risk_assessment.requires_review:
+            flash("Konto zostalo utworzone. Rejestracja oznaczona do dodatkowej weryfikacji.", "info")
+        else:
+            flash("Konto zostalo utworzone.", "success")
+
         if current_app.config.get("REGISTRATION_AUTO_LOGIN", True):
             login_user(user)
             return redirect(url_for("client.dashboard"))

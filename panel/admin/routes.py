@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from decimal import Decimal, InvalidOperation
+from io import BytesIO
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, flash, redirect, render_template, request, send_file, url_for
 from flask_login import current_user, login_required
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
@@ -13,9 +15,11 @@ from panel.forms.admin import AppearanceSettingsForm, BalanceAdjustmentForm, Pas
 from panel.forms.automations import AutomationManualTriggerForm, AutomationRuleForm
 from panel.models import (
     ActivityLog,
+    ApprovalRequest,
     AutomationExecution,
     AutomationRule,
     BillingTransaction,
+    BulkOperation,
     Client,
     Domain,
     FTPAccount,
@@ -23,18 +27,33 @@ from panel.models import (
     Mailbox,
     MigrationJob,
     OperatorPermission,
+    ExportJob,
+    RegistrationFraudCheck,
     Role,
     Subdomain,
     User,
     UserStatusHistory,
 )
-from panel.services.audit import log_activity
+from panel.services.anti_fraud import mark_fraud_check_reviewed
+from panel.services.approvals import ApprovalDecisionError, decide_approval_request, expire_due_approval_requests
+from panel.services.audit import log_activity, verify_activity_chain
 from panel.services.billing import adjust_balance, ensure_client_balance
 from panel.services.monitoring import collect_server_metrics, service_statuses
 from panel.services.migrations import cancel_migration_job, run_due_migration_jobs
+from panel.services.overdue_reminders import send_overdue_reminders
 from panel.services.operator_permissions import domain_choices, has_custom_permissions, permissions_matrix, save_permissions_matrix
 from panel.services.smoketest import run_app_smoke_test, write_smoke_test_log
 from panel.services.automations import execute_automation_rules, parse_json_text
+from panel.services.bulk_operations import bulk_lock_user_accounts, bulk_update_client_limits
+from panel.services.exports import (
+    create_export_job,
+    dataset_clients,
+    dataset_invoices,
+    dataset_resource_usage,
+    dataset_tickets,
+    serialize_csv,
+    serialize_xlsx,
+)
 from panel.services.reporting import financial_metrics
 from panel.services.settings import (
     CSS_FRAMEWORK_SETTING_KEY,
@@ -111,6 +130,10 @@ def dashboard():
         "mailboxes": _safe_count(Mailbox.query),
         "overdue_clients": _safe_count(Client.query.filter(Client.billing_status.in_(["overdue", "in_grace_period"]))),
         "suspended_clients": _safe_count(Client.query.filter(Client.billing_status.in_(["suspended_non_payment", "manually_suspended"]))),
+        "fraud_alerts": _safe_count(
+            RegistrationFraudCheck.query.filter(RegistrationFraudCheck.risk_level.in_(["medium", "high"]))
+            .filter(RegistrationFraudCheck.reviewed_at.is_(None))
+        ),
         "receivables": _safe_scalar(
             db.session.query(func.coalesce(func.sum(-BillingTransaction.amount), 0)).filter(BillingTransaction.amount < 0),
             0,
@@ -140,6 +163,328 @@ def dashboard():
 def reports():
     metrics = financial_metrics()
     return render_template("admin/reports.html", title="Raporty", metrics=metrics)
+
+
+@admin_bp.route("/reports/reminders/send", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def reports_send_overdue_reminders():
+    summary = send_overdue_reminders(actor=current_user)
+    db.session.commit()
+    flash(
+        "Przypomnienia overdue: "
+        f"wyslano={summary['sent']}, bledy={summary['failed']}, pominieto={summary['skipped']}",
+        "info",
+    )
+    return redirect(url_for("admin.reports"))
+
+
+@admin_bp.route("/security/anti-fraud")
+@login_required
+@roles_required("administrator")
+def anti_fraud():
+    risk_filter = (request.args.get("risk") or "all").strip().lower()
+    state_filter = (request.args.get("state") or "open").strip().lower()
+
+    query = RegistrationFraudCheck.query.order_by(RegistrationFraudCheck.created_at.desc())
+    if risk_filter in {"low", "medium", "high"}:
+        query = query.filter(RegistrationFraudCheck.risk_level == risk_filter)
+
+    if state_filter == "open":
+        query = query.filter(RegistrationFraudCheck.reviewed_at.is_(None))
+    elif state_filter == "reviewed":
+        query = query.filter(RegistrationFraudCheck.reviewed_at.is_not(None))
+    elif state_filter == "blocked":
+        query = query.filter(RegistrationFraudCheck.blocked.is_(True))
+
+    checks = query.limit(250).all()
+    return render_template(
+        "admin/anti_fraud.html",
+        title="Anti-fraud",
+        checks=checks,
+        risk_filter=risk_filter,
+        state_filter=state_filter,
+    )
+
+
+@admin_bp.route("/security/anti-fraud/<int:check_id>/review", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def anti_fraud_review(check_id: int):
+    check = RegistrationFraudCheck.query.get_or_404(check_id)
+    note = (request.form.get("note") or "").strip()[:255]
+    mark_fraud_check_reviewed(check, current_user, note=note)
+    log_activity(
+        "admin.anti_fraud_review",
+        "registration_fraud_check",
+        "Zamknieto alert anti-fraud",
+        entity_id=check.id,
+        actor=current_user,
+        metadata={"score": check.score, "risk_level": check.risk_level, "note": note},
+    )
+    db.session.commit()
+    flash("Alert anti-fraud oznaczony jako przejrzany.", "success")
+    return redirect(url_for("admin.anti_fraud"))
+
+
+@admin_bp.route("/security/anti-fraud/<int:check_id>/unlock", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def anti_fraud_unlock(check_id: int):
+    check = RegistrationFraudCheck.query.get_or_404(check_id)
+    if check.user is None:
+        flash("Brak powiazanego konta uzytkownika dla tego alertu.", "warning")
+        return redirect(url_for("admin.anti_fraud"))
+
+    check.user.is_active_account = True
+    if check.user.status == "inactive":
+        check.user.status = "active"
+    if check.user.manual_lock_reason and "anti-fraud" in check.user.manual_lock_reason.lower():
+        check.user.manual_lock_reason = None
+
+    mark_fraud_check_reviewed(check, current_user, note="Manualny unlock po przegladzie")
+    log_activity(
+        "admin.anti_fraud_unlock",
+        "user",
+        f"Odblokowano konto po alarmie anti-fraud: {check.user.username}",
+        entity_id=check.user.id,
+        actor=current_user,
+        metadata={"fraud_check_id": check.id, "score": check.score, "risk_level": check.risk_level},
+    )
+    db.session.commit()
+    flash("Konto zostalo odblokowane po przegladzie anti-fraud.", "success")
+    return redirect(url_for("admin.anti_fraud"))
+
+
+@admin_bp.route("/security/approvals")
+@login_required
+@roles_required("administrator")
+def approvals():
+    expire_due_approval_requests(limit=250)
+
+    status_filter = (request.args.get("status") or "pending").strip().lower()
+    action_filter = (request.args.get("action") or "all").strip().lower()
+    allowed_statuses = {"all", "pending", "approved", "executed", "rejected", "expired", "cancelled"}
+    if status_filter not in allowed_statuses:
+        status_filter = "pending"
+
+    query = ApprovalRequest.query.order_by(ApprovalRequest.created_at.desc())
+    if status_filter != "all":
+        query = query.filter(ApprovalRequest.status == status_filter)
+    if action_filter != "all":
+        query = query.filter(ApprovalRequest.action_key == action_filter)
+
+    requests = query.limit(250).all()
+    counts = {
+        "pending": _safe_count(ApprovalRequest.query.filter_by(status="pending")),
+        "approved": _safe_count(ApprovalRequest.query.filter_by(status="approved")),
+        "executed": _safe_count(ApprovalRequest.query.filter_by(status="executed")),
+        "rejected": _safe_count(ApprovalRequest.query.filter_by(status="rejected")),
+        "expired": _safe_count(ApprovalRequest.query.filter_by(status="expired")),
+        "cancelled": _safe_count(ApprovalRequest.query.filter_by(status="cancelled")),
+    }
+    action_keys = [
+        item[0]
+        for item in _safe_all(
+            db.session.query(ApprovalRequest.action_key).distinct().order_by(ApprovalRequest.action_key.asc()),
+            default=[],
+        )
+    ]
+    db.session.commit()
+    return render_template(
+        "admin/approvals.html",
+        title="Akceptacje ryzykownych akcji",
+        requests=requests,
+        counts=counts,
+        status_filter=status_filter,
+        action_filter=action_filter,
+        action_keys=action_keys,
+    )
+
+
+@admin_bp.route("/security/approvals/<int:request_id>/approve", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def approvals_approve(request_id: int):
+    request_obj = ApprovalRequest.query.get_or_404(request_id)
+    note = (request.form.get("note") or "").strip()[:255]
+    try:
+        result = decide_approval_request(
+            request_obj=request_obj,
+            user=current_user,
+            decision="approve",
+            note=note,
+        )
+        db.session.commit()
+    except ApprovalDecisionError as exc:
+        db.session.rollback()
+        flash(str(exc), "warning")
+        return redirect(url_for("admin.approvals"))
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Nie udalo sie zapisac decyzji: {exc}", "danger")
+        return redirect(url_for("admin.approvals"))
+
+    if result["status"] == "executed":
+        flash(f"Wniosek #{request_obj.id} zatwierdzony i wykonany.", "success")
+    elif result["status"] == "approved":
+        flash(f"Wniosek #{request_obj.id} zatwierdzony.", "success")
+    else:
+        flash(
+            f"Wniosek #{request_obj.id}: zatwierdzenia {result['approvals']}/{result['required_approvals']}.",
+            "info",
+        )
+    return redirect(url_for("admin.approvals"))
+
+
+@admin_bp.route("/security/approvals/<int:request_id>/reject", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def approvals_reject(request_id: int):
+    request_obj = ApprovalRequest.query.get_or_404(request_id)
+    note = (request.form.get("note") or "").strip()[:255]
+    try:
+        decide_approval_request(
+            request_obj=request_obj,
+            user=current_user,
+            decision="reject",
+            note=note,
+        )
+        db.session.commit()
+    except ApprovalDecisionError as exc:
+        db.session.rollback()
+        flash(str(exc), "warning")
+        return redirect(url_for("admin.approvals"))
+    except Exception as exc:
+        db.session.rollback()
+        flash(f"Nie udalo sie odrzucic wniosku: {exc}", "danger")
+        return redirect(url_for("admin.approvals"))
+
+    flash(f"Wniosek #{request_obj.id} zostal odrzucony.", "warning")
+    return redirect(url_for("admin.approvals"))
+
+
+@admin_bp.route("/security/audit-integrity")
+@login_required
+@roles_required("administrator")
+def audit_integrity():
+    result = verify_activity_chain(max_errors=200)
+    return render_template(
+        "admin/audit_integrity.html",
+        title="Integralnosc audytu",
+        result=result,
+    )
+
+
+@admin_bp.route("/exports")
+@login_required
+@roles_required("administrator")
+def exports_index():
+    jobs = ExportJob.query.order_by(ExportJob.created_at.desc()).limit(200).all()
+    return render_template("admin/exports.html", title="Eksport danych", jobs=jobs)
+
+
+@admin_bp.route("/exports/<string:dataset_key>")
+@login_required
+@roles_required("administrator")
+def export_dataset(dataset_key: str):
+    dataset = (dataset_key or "").strip().lower()
+    format_name = (request.args.get("format") or "csv").strip().lower()
+    if format_name not in {"csv", "xlsx"}:
+        format_name = "csv"
+
+    raw_limit = (request.args.get("limit") or "5000").strip()
+    limit = 5000
+    if raw_limit.isdigit():
+        limit = max(1, min(int(raw_limit), 20000))
+
+    filters: dict = {"limit": limit}
+    headers: list[str]
+    rows: list[list]
+
+    try:
+        if dataset == "clients":
+            status_filter = (request.args.get("status") or "").strip().lower() or None
+            filters["status"] = status_filter
+            headers, rows = dataset_clients(status_filter=status_filter, limit=limit)
+        elif dataset == "invoices":
+            status_filter = (request.args.get("status") or "").strip().lower() or None
+            client_id = None
+            client_id_raw = (request.args.get("client_id") or "").strip()
+            if client_id_raw.isdigit():
+                client_id = int(client_id_raw)
+            filters["status"] = status_filter
+            filters["client_id"] = client_id
+            headers, rows = dataset_invoices(status_filter=status_filter, client_id=client_id, limit=limit)
+        elif dataset == "tickets":
+            status_filter = (request.args.get("status") or "").strip().lower() or None
+            category_filter = (request.args.get("category") or "").strip().lower() or None
+            filters["status"] = status_filter
+            filters["category"] = category_filter
+            headers, rows = dataset_tickets(status_filter=status_filter, category_filter=category_filter, limit=limit)
+        elif dataset == "resource_usage":
+            client_id = None
+            client_id_raw = (request.args.get("client_id") or "").strip()
+            if client_id_raw.isdigit():
+                client_id = int(client_id_raw)
+            filters["client_id"] = client_id
+            headers, rows = dataset_resource_usage(client_id=client_id, limit=limit)
+        else:
+            flash("Nieznany dataset eksportu.", "danger")
+            return redirect(url_for("admin.exports_index"))
+
+        payload: BytesIO
+        mimetype: str
+        if format_name == "xlsx":
+            payload = serialize_xlsx(headers, rows)
+            mimetype = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        else:
+            payload = serialize_csv(headers, rows)
+            mimetype = "text/csv; charset=utf-8"
+
+        job = create_export_job(
+            dataset=dataset,
+            format_name=format_name,
+            requested_by=current_user,
+            filters=filters,
+            row_count=len(rows),
+            status="completed",
+        )
+        log_activity(
+            "admin.export_dataset",
+            "export_job",
+            f"Wyeksportowano dataset {dataset} ({format_name})",
+            entity_id=job.id,
+            actor=current_user,
+            metadata={"dataset": dataset, "format": format_name, "row_count": len(rows), "filters": filters},
+        )
+        db.session.commit()
+
+        extension = "xlsx" if format_name == "xlsx" else "csv"
+        filename = f"{dataset}-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.{extension}"
+        return send_file(payload, as_attachment=True, download_name=filename, mimetype=mimetype)
+    except Exception as exc:
+        job = create_export_job(
+            dataset=dataset,
+            format_name=format_name,
+            requested_by=current_user,
+            filters=filters,
+            row_count=0,
+            status="failed",
+            error_message=str(exc),
+        )
+        log_activity(
+            "admin.export_dataset_failed",
+            "export_job",
+            f"Eksport datasetu {dataset} nie powiodl sie",
+            entity_id=job.id,
+            actor=current_user,
+            success=False,
+            metadata={"dataset": dataset, "format": format_name, "error": str(exc)[:255]},
+        )
+        db.session.commit()
+        flash(f"Eksport nie powiodl sie: {exc}", "danger")
+        return redirect(url_for("admin.exports_index"))
 
 
 def _user_form_to_model(form: UserForm, user: User) -> User:
@@ -194,7 +539,131 @@ def _parse_operator_permissions_form() -> tuple[bool, dict[str, dict[str, bool]]
 @login_required
 @roles_required("administrator")
 def users():
-    return render_template("admin/users_list.html", users=User.query.order_by(User.created_at.desc()).all())
+    users = User.query.order_by(User.created_at.desc()).all()
+    bulk_operation = None
+    bulk_items = []
+    bulk_operation_id_raw = (request.args.get("bulk_operation_id") or "").strip()
+    if bulk_operation_id_raw.isdigit():
+        bulk_operation = BulkOperation.query.get(int(bulk_operation_id_raw))
+        if bulk_operation is not None and bulk_operation.target_type in {"user", "client"}:
+            bulk_items = list(bulk_operation.items)
+    return render_template(
+        "admin/users_list.html",
+        users=users,
+        bulk_operation=bulk_operation,
+        bulk_items=bulk_items,
+    )
+
+
+@admin_bp.route("/users/bulk-lock", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def users_bulk_lock():
+    action = (request.form.get("action") or "lock").strip().lower()
+    lock = action != "unlock"
+    dry_run = (request.form.get("dry_run") or "") == "1"
+    confirm_text = (request.form.get("confirm_text") or "").strip()
+    reason = (request.form.get("reason") or "Masowa blokada konta").strip()
+
+    user_ids = []
+    for raw_id in request.form.getlist("user_ids"):
+        if str(raw_id).isdigit():
+            user_ids.append(int(raw_id))
+
+    if not user_ids:
+        flash("Wybierz co najmniej jednego uzytkownika.", "warning")
+        return redirect(url_for("admin.users"))
+
+    if lock and not dry_run and confirm_text != "POTWIERDZ":
+        flash("Dla masowej blokady wpisz POTWIERDZ.", "danger")
+        return redirect(url_for("admin.users"))
+
+    operation, summary = bulk_lock_user_accounts(
+        user_ids=user_ids,
+        reason=reason,
+        lock=lock,
+        actor=current_user,
+        dry_run=dry_run,
+    )
+    log_activity(
+        "admin.users_bulk_lock",
+        "bulk_operation",
+        "Wykonano masowa operacje na kontach uzytkownikow",
+        entity_id=operation.id,
+        actor=current_user,
+        metadata={"lock": lock, "dry_run": dry_run, "summary": summary},
+    )
+    db.session.commit()
+
+    flash(
+        f"Bulk konta: sukces {summary['success']}, bledy {summary['failed']}, "
+        f"tryb {'podglad' if dry_run else 'wykonanie'}.",
+        "info",
+    )
+    return redirect(url_for("admin.users", bulk_operation_id=operation.id))
+
+
+@admin_bp.route("/users/bulk-limits", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def users_bulk_limits():
+    dry_run = (request.form.get("dry_run") or "") == "1"
+    disk_raw = (request.form.get("disk_hard_mb") or "").strip()
+    inode_raw = (request.form.get("inode_limit") or "").strip()
+
+    disk_hard_mb = None
+    inode_limit = None
+    try:
+        if disk_raw:
+            disk_hard_mb = int(disk_raw)
+        if inode_raw:
+            inode_limit = int(inode_raw)
+    except ValueError:
+        flash("Limity musza byc liczbami calkowitymi.", "danger")
+        return redirect(url_for("admin.users"))
+
+    if disk_hard_mb is None and inode_limit is None:
+        flash("Podaj co najmniej jeden limit do aktualizacji.", "warning")
+        return redirect(url_for("admin.users"))
+
+    user_ids = []
+    for raw_id in request.form.getlist("user_ids"):
+        if str(raw_id).isdigit():
+            user_ids.append(int(raw_id))
+
+    if not user_ids:
+        flash("Wybierz co najmniej jednego uzytkownika.", "warning")
+        return redirect(url_for("admin.users"))
+
+    clients = Client.query.filter(Client.user_id.in_(user_ids)).all()
+    client_ids = [client.id for client in clients]
+    if not client_ids:
+        flash("Wybrani uzytkownicy nie maja profilu klienta.", "warning")
+        return redirect(url_for("admin.users"))
+
+    operation, summary = bulk_update_client_limits(
+        client_ids=client_ids,
+        disk_hard_mb=disk_hard_mb,
+        inode_limit=inode_limit,
+        actor=current_user,
+        dry_run=dry_run,
+    )
+    log_activity(
+        "admin.users_bulk_limits",
+        "bulk_operation",
+        "Wykonano masowa aktualizacje limitow klientow",
+        entity_id=operation.id,
+        actor=current_user,
+        metadata={"dry_run": dry_run, "summary": summary, "disk_hard_mb": disk_hard_mb, "inode_limit": inode_limit},
+    )
+    db.session.commit()
+
+    flash(
+        f"Bulk limity: sukces {summary['success']}, bledy {summary['failed']}, "
+        f"tryb {'podglad' if dry_run else 'wykonanie'}.",
+        "info",
+    )
+    return redirect(url_for("admin.users", bulk_operation_id=operation.id))
 
 
 @admin_bp.route("/users/new", methods=["GET", "POST"])

@@ -6,7 +6,7 @@
   {% if current_user.is_staff %}
     <a class="nav-link {% if request.endpoint == 'admin.dashboard' %}active{% endif %}" href="{{ url_for('admin.dashboard') }}">Dashboard</a>
     <a class="nav-link {% if request.endpoint == 'admin.users' %}active{% endif %}" href="{{ url_for('admin.users') }}">Uzytkownicy</a>
-    <a class="nav-link {% if request.endpoint in ['tickets.admin_tickets', 'tickets.admin_ticket_view'] %}active{% endif %}" href="{{ url_for('tickets.admin_tickets') }}">Tickety</a>
+    <a class="nav-link {% if request.endpoint in ['tickets.admin_tickets', 'tickets.admin_ticket_view', 'tickets.admin_macros', 'tickets.admin_macro_create', 'tickets.admin_macro_edit'] %}active{% endif %}" href="{{ url_for('tickets.admin_tickets') }}">Tickety</a>
     <a class="nav-link {% if request.endpoint in ['billing.admin_plans', 'billing.admin_plan_create', 'billing.admin_plan_edit'] %}active{% endif %}" href="{{ url_for('billing.admin_plans') }}">Plany</a>
     <a class="nav-link {% if request.endpoint in ['billing.admin_services', 'billing.admin_service_create'] %}active{% endif %}" href="{{ url_for('billing.admin_services') }}">Uslugi</a>
     <a class="nav-link {% if request.endpoint in ['domains.admin_domains', 'domains.admin_domain_create', 'domains.admin_domain_edit'] %}active{% endif %}" href="{{ url_for('domains.admin_domains') }}">Domeny</a>
@@ -16,6 +16,7 @@
     <a class="nav-link {% if request.endpoint in ['dns.admin_dns', 'dns.admin_zone_create', 'dns.admin_record_create'] %}active{% endif %}" href="{{ url_for('dns.admin_dns') }}">DNS</a>
     <a class="nav-link {% if request.endpoint in ['mail.admin_mail', 'mail.admin_mailbox_create', 'mail.admin_mailbox_edit', 'mail.admin_alias_create', 'mail.admin_alias_edit'] %}active{% endif %}" href="{{ url_for('mail.admin_mail') }}">Poczta</a>
     <a class="nav-link {% if request.endpoint in ['ssl.admin_ssl', 'ssl.admin_create', 'ssl.admin_edit'] %}active{% endif %}" href="{{ url_for('ssl.admin_ssl') }}">SSL</a>
+    <a class="nav-link {% if request.endpoint in ['ssh.admin_keys', 'ssh.admin_key_toggle', 'ssh.admin_key_delete'] %}active{% endif %}" href="{{ url_for('ssh.admin_keys') }}">SSH Keys</a>
     <a class="nav-link {% if request.endpoint in ['backups.admin_backups', 'backups.admin_create'] %}active{% endif %}" href="{{ url_for('backups.admin_backups') }}">Backupy</a>
     <a class="nav-link {% if request.endpoint in ['status.admin_index', 'status.admin_create', 'status.admin_edit'] %}active{% endif %}" href="{{ url_for('status.admin_index') }}">Status page</a>
     <a class="nav-link {% if request.endpoint in ['monitoring.index', 'monitoring.admin_clients'] %}active{% endif %}" href="{{ url_for('monitoring.index') }}">Monitoring</a>
@@ -24,7 +25,11 @@
     <a class="nav-link {% if request.endpoint == 'hosts.index' %}active{% endif %}" href="{{ url_for('hosts.index') }}">Hosts</a>
     <a class="nav-link {% if request.endpoint in ['admin.automations', 'admin.automation_create', 'admin.automation_edit', 'admin.automation_delete'] %}active{% endif %}" href="{{ url_for('admin.automations') }}">Automatyzacje</a>
     <a class="nav-link {% if request.endpoint in ['admin.migrations', 'admin.migrations_process', 'admin.migration_cancel', 'admin.migration_retry'] %}active{% endif %}" href="{{ url_for('admin.migrations') }}">Migracje</a>
-    <a class="nav-link {% if request.endpoint == 'admin.reports' %}active{% endif %}" href="{{ url_for('admin.reports') }}">Raporty</a>
+    <a class="nav-link {% if request.endpoint in ['admin.exports_index', 'admin.export_dataset'] %}active{% endif %}" href="{{ url_for('admin.exports_index') }}">Eksporty</a>
+    <a class="nav-link {% if request.endpoint in ['admin.reports', 'admin.reports_send_overdue_reminders'] %}active{% endif %}" href="{{ url_for('admin.reports') }}">Raporty</a>
+    <a class="nav-link {% if request.endpoint in ['admin.anti_fraud', 'admin.anti_fraud_review', 'admin.anti_fraud_unlock'] %}active{% endif %}" href="{{ url_for('admin.anti_fraud') }}">Anti-fraud</a>
+    <a class="nav-link {% if request.endpoint in ['admin.approvals', 'admin.approvals_approve', 'admin.approvals_reject'] %}active{% endif %}" href="{{ url_for('admin.approvals') }}">Akceptacje</a>
+    <a class="nav-link {% if request.endpoint == 'admin.audit_integrity' %}active{% endif %}" href="{{ url_for('admin.audit_integrity') }}">Audit integrity</a>
     <a class="nav-link {% if request.endpoint == 'admin.settings' %}active{% endif %}" href="{{ url_for('admin.settings') }}">Ustawienia</a>
       {% if config.TWO_FACTOR_AVAILABLE %}
         <a class="nav-link {% if request.endpoint == 'auth.two_factor_settings' %}active{% endif %}" href="{{ url_for('auth.two_factor_settings') }}">2FA</a>
@@ -42,6 +47,7 @@
     <a class="nav-link {% if request.endpoint in ['dns.client_dns', 'dns.client_record_edit'] %}active{% endif %}" href="{{ url_for('dns.client_dns') }}">DNS</a>
     <a class="nav-link {% if request.endpoint in ['mail.client_mail', 'mail.client_mailbox_create', 'mail.client_mailbox_edit', 'mail.client_alias_create', 'mail.client_alias_edit'] %}active{% endif %}" href="{{ url_for('mail.client_mail') }}">Poczta</a>
     <a class="nav-link {% if request.endpoint in ['ssl.client_ssl', 'ssl.client_create', 'ssl.client_edit'] %}active{% endif %}" href="{{ url_for('ssl.client_ssl') }}">SSL</a>
+    <a class="nav-link {% if request.endpoint in ['ssh.client_keys', 'ssh.client_key_add', 'ssh.client_key_toggle', 'ssh.client_key_delete'] %}active{% endif %}" href="{{ url_for('ssh.client_keys') }}">SSH Keys</a>
     <a class="nav-link {% if request.endpoint == 'backups.client_backups' %}active{% endif %}" href="{{ url_for('backups.client_backups') }}">Backupy</a>
     <a class="nav-link {% if request.endpoint == 'status.client_status_page' %}active{% endif %}" href="{{ url_for('status.client_status_page') }}">Status page</a>
     <a class="nav-link {% if request.endpoint == 'monitoring.client_usage' %}active{% endif %}" href="{{ url_for('monitoring.client_usage') }}">Monitoring</a>

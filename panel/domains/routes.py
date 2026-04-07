@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from flask import Blueprint, current_app, flash, redirect, render_template, url_for
+from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import selectinload
 
 from panel.extensions import db
 from panel.forms.services import DomainForm, SubdomainForm
 from panel.models import Client, Domain, Subdomain
+from panel.services.approvals import action_requires_approval, create_approval_request
 from panel.services.audit import log_activity
 from panel.services.client_apache import ClientApacheServiceError, sync_client_apache_instance
 from panel.services.domains import (
@@ -16,6 +18,7 @@ from panel.services.domains import (
     provision_domain_tree,
     provision_subdomain_tree,
 )
+from panel.services.registrar import RegistrarError, register_domain_with_registrar, renew_domain_registration, sync_domain_registration
 from panel.utils.decorators import active_account_required, roles_required
 from panel.utils.query import client_choices, current_client, owned_or_404, service_choices
 
@@ -45,11 +48,28 @@ def _sync_client_apache(client: Client, reason: str) -> None:
         flash(f"Uwaga: nie udalo sie zsynchronizowac kontenera Apache klienta: {exc}", "warning")
 
 
+def _name_servers_from_text(value: str | None) -> list[str]:
+    items: list[str] = []
+    seen: set[str] = set()
+    for line in (value or "").splitlines():
+        normalized = line.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        items.append(normalized)
+    return items
+
+
 @domains_bp.route("/admin/domains")
 @login_required
 @roles_required("administrator")
 def admin_domains():
-    return render_template("domains/admin_domains.html", domains=Domain.query.order_by(Domain.created_at.desc()).all())
+    domains = (
+        Domain.query.options(selectinload(Domain.registration), selectinload(Domain.client))
+        .order_by(Domain.created_at.desc())
+        .all()
+    )
+    return render_template("domains/admin_domains.html", domains=domains)
 
 
 @domains_bp.route("/admin/domains/new", methods=["GET", "POST"])
@@ -62,6 +82,8 @@ def admin_domain_create():
         client = Client.query.get_or_404(form.client_id.data)
         domain_name = form.name.data.strip().lower()
         php_version = form.php_version.data.strip()
+        register_now = bool(form.register_in_registrar.data)
+        registrar_warning: str | None = None
         domain = Domain(
             client=client,
             client_service_id=form.client_service_id.data or None,
@@ -75,6 +97,18 @@ def admin_domain_create():
             paths = provision_domain_tree(client, domain_name, php_version)
             domain.document_root = paths["public"]
             db.session.add(domain)
+            db.session.flush()
+            if register_now:
+                try:
+                    register_domain_with_registrar(
+                        domain,
+                        years=form.registration_years.data or 1,
+                        auto_renew=bool(form.auto_renew.data),
+                        name_servers=_name_servers_from_text(form.name_servers.data),
+                        actor=current_user,
+                    )
+                except RegistrarError as exc:
+                    registrar_warning = str(exc)
             log_activity(
                 "domains.create",
                 "domain",
@@ -103,6 +137,10 @@ def admin_domain_create():
                 managed_root_preview=_managed_domain_preview(client, domain_name),
             )
         flash("Domena zostala utworzona wraz z katalogami public, private, subdomains, ssl i config.", "success")
+        if register_now and registrar_warning:
+            flash(f"Domena lokalna zostala utworzona, ale rejestracja registrar nie powiodla sie: {registrar_warning}", "warning")
+        elif register_now:
+            flash("Domena zostala zarejestrowana u providera registrar.", "info")
         _sync_client_apache(client, "domains.create")
         return redirect(url_for("domains.admin_domains"))
 
@@ -123,10 +161,16 @@ def admin_domain_edit(domain_id: int):
     form = DomainForm(obj=domain)
     form.client_id.data = domain.client_id
     _populate_domain_form(form)
+    if request.method == "GET" and domain.registration is not None:
+        form.register_in_registrar.data = True
+        form.auto_renew.data = bool(domain.registration.auto_renew)
+        form.name_servers.data = "\n".join(domain.registration.name_servers_json or [])
     if form.validate_on_submit():
         client = Client.query.get_or_404(form.client_id.data)
         domain_name = form.name.data.strip().lower()
         php_version = form.php_version.data.strip()
+        register_now = bool(form.register_in_registrar.data)
+        registrar_warning: str | None = None
         try:
             paths = provision_domain_tree(client, domain_name, php_version)
             domain.client_id = form.client_id.data
@@ -136,6 +180,20 @@ def admin_domain_edit(domain_id: int):
             domain.php_version = php_version
             domain.status = form.status.data
             domain.is_primary = form.is_primary.data
+            if domain.registration is not None:
+                domain.registration.auto_renew = bool(form.auto_renew.data)
+                domain.registration.name_servers_json = _name_servers_from_text(form.name_servers.data)
+            elif register_now:
+                try:
+                    register_domain_with_registrar(
+                        domain,
+                        years=form.registration_years.data or 1,
+                        auto_renew=bool(form.auto_renew.data),
+                        name_servers=_name_servers_from_text(form.name_servers.data),
+                        actor=current_user,
+                    )
+                except RegistrarError as exc:
+                    registrar_warning = str(exc)
             log_activity(
                 "domains.edit",
                 "domain",
@@ -164,6 +222,8 @@ def admin_domain_edit(domain_id: int):
                 managed_root_preview=_managed_domain_preview(client, domain_name),
             )
         flash("Domena zostala zaktualizowana.", "success")
+        if register_now and registrar_warning:
+            flash(f"Nie udalo sie zarejestrowac domeny w registrarze: {registrar_warning}", "warning")
         _sync_client_apache(client, "domains.edit")
         return redirect(url_for("domains.admin_domains"))
 
@@ -182,11 +242,106 @@ def admin_domain_delete(domain_id: int):
     domain = Domain.query.get_or_404(domain_id)
     client = domain.client
     name = domain.name
+
+    if action_requires_approval("domains.delete"):
+        approval_request, created = create_approval_request(
+            action_key="domains.delete",
+            target_type="domain",
+            target_id=domain.id,
+            requested_by=current_user,
+            reason=f"Usuniecie domeny {name}",
+            client=client,
+            metadata={"domain_name": name, "domain_id": domain.id},
+        )
+        db.session.commit()
+        if created:
+            flash(
+                f"Wniosek o usuniecie domeny {name} zostal utworzony (#{approval_request.id}) i czeka na akceptacje.",
+                "warning",
+            )
+        else:
+            flash(
+                f"Istnieje juz aktywny wniosek o usuniecie domeny {name} (#{approval_request.id}).",
+                "info",
+            )
+        return redirect(url_for("domains.admin_domains"))
+
     db.session.delete(domain)
     log_activity("domains.delete", "domain", f"Usunieto domene {name}", entity_id=domain_id, client=client)
     db.session.commit()
     flash("Domena zostala usunieta.", "warning")
     _sync_client_apache(client, "domains.delete")
+    return redirect(url_for("domains.admin_domains"))
+
+
+@domains_bp.route("/admin/domains/<int:domain_id>/registrar/register", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def admin_domain_registrar_register(domain_id: int):
+    domain = Domain.query.get_or_404(domain_id)
+    years_raw = (request.form.get("years") or "1").strip()
+    try:
+        years = int(years_raw)
+    except ValueError:
+        years = 1
+    auto_renew = request.form.get("auto_renew") != "0"
+
+    try:
+        register_domain_with_registrar(
+            domain,
+            years=years,
+            auto_renew=auto_renew,
+            name_servers=_name_servers_from_text(request.form.get("name_servers")),
+            actor=current_user,
+        )
+        db.session.commit()
+        flash(f"Domena {domain.name} zostala zarejestrowana w registrarze.", "success")
+    except RegistrarError as exc:
+        db.session.rollback()
+        flash(f"Rejestracja domeny nie powiodla sie: {exc}", "danger")
+    return redirect(url_for("domains.admin_domains"))
+
+
+@domains_bp.route("/admin/domains/<int:domain_id>/registrar/renew", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def admin_domain_registrar_renew(domain_id: int):
+    domain = Domain.query.get_or_404(domain_id)
+    if domain.registration is None:
+        flash("Domena nie ma aktywnej rejestracji registrar.", "warning")
+        return redirect(url_for("domains.admin_domains"))
+
+    years_raw = (request.form.get("years") or "1").strip()
+    try:
+        years = int(years_raw)
+    except ValueError:
+        years = 1
+    try:
+        renew_domain_registration(domain.registration, years=years, actor=current_user)
+        db.session.commit()
+        flash(f"Domena {domain.name} zostala odnowiona.", "success")
+    except RegistrarError as exc:
+        db.session.rollback()
+        flash(f"Nie udalo sie odnowic domeny: {exc}", "danger")
+    return redirect(url_for("domains.admin_domains"))
+
+
+@domains_bp.route("/admin/domains/<int:domain_id>/registrar/sync", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def admin_domain_registrar_sync(domain_id: int):
+    domain = Domain.query.get_or_404(domain_id)
+    if domain.registration is None:
+        flash("Domena nie ma rejestracji registrar do synchronizacji.", "warning")
+        return redirect(url_for("domains.admin_domains"))
+
+    try:
+        sync_domain_registration(domain.registration, actor=current_user)
+        db.session.commit()
+        flash(f"Synchronizacja registrar dla domeny {domain.name} zakonczona.", "success")
+    except RegistrarError as exc:
+        db.session.rollback()
+        flash(f"Nie udalo sie zsynchronizowac domeny: {exc}", "danger")
     return redirect(url_for("domains.admin_domains"))
 
 

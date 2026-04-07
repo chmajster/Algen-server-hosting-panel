@@ -1,0 +1,24 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-4">
+  <h1 class="h3 mb-4">{{ title }}</h1>
+  <form method="post" class="row g-3">
+    {{ form.hidden_tag() }}
+    <div class="col-12 col-md-6">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control") }}</div>
+    <div class="col-12 col-md-3">{{ form.category.label(class="form-label") }}{{ form.category(class="form-select") }}</div>
+    <div class="col-12 col-md-3">{{ form.visibility_scope.label(class="form-label") }}{{ form.visibility_scope(class="form-select") }}</div>
+    <div class="col-12">{{ form.subject_template.label(class="form-label") }}{{ form.subject_template(class="form-control", placeholder="Opcjonalny temat odpowiedzi") }}</div>
+    <div class="col-12">{{ form.body_template.label(class="form-label") }}{{ form.body_template(class="form-control", rows="10", placeholder="Uzywaj placeholderow np. {% raw %}{{client_full_name}}{% endraw %} i {% raw %}{{ticket_id}}{% endraw %}") }}</div>
+    <div class="col-12 col-md-3">{{ form.sort_order.label(class="form-label") }}{{ form.sort_order(class="form-control") }}</div>
+    <div class="col-12 col-md-3 form-check ms-3 mt-4">{{ form.is_active(class="form-check-input") }} {{ form.is_active.label(class="form-check-label") }}</div>
+    <div class="col-12 d-flex gap-2">
+      <button class="btn btn-primary">{{ form.submit.label.text }}</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('tickets.admin_macros') }}">Anuluj</a>
+    </div>
+  </form>
+
+  <div class="alert alert-info mt-4 mb-0 small">
+    Dostepne placeholdery: {% raw %}{{client_full_name}}{% endraw %}, {% raw %}{{company_name}}{% endraw %}, {% raw %}{{client_id}}{% endraw %}, {% raw %}{{service_name}}{% endraw %}, {% raw %}{{plan_name}}{% endraw %}, {% raw %}{{invoice_number}}{% endraw %}, {% raw %}{{due_date}}{% endraw %}, {% raw %}{{ticket_id}}{% endraw %}, {% raw %}{{assigned_operator}}{% endraw %}, {% raw %}{{domain}}{% endraw %}.
+  </div>
+</div>
+{% endblock %}

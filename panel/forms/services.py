@@ -118,6 +118,10 @@ class DomainForm(FlaskForm):
         validators=[DataRequired()],
     )
     is_primary = BooleanField("Domena glowna")
+    register_in_registrar = BooleanField("Zarejestruj domene w registrarze", default=False)
+    registration_years = IntegerField("Lata rejestracji", validators=[Optional(), NumberRange(min=1, max=10)], default=1)
+    auto_renew = BooleanField("Auto-renew", default=True)
+    name_servers = TextAreaField("Name servery", validators=[Optional(), Length(max=1000)])
     submit = SubmitField("Zapisz")
 
     def validate_name(self, field):

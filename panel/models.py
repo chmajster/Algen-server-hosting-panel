@@ -104,6 +104,61 @@ class User(UserMixin, TimestampMixin, db.Model):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    ticket_macro_creations = db.relationship(
+        "TicketMacro",
+        back_populates="created_by",
+        foreign_keys="TicketMacro.created_by_user_id",
+    )
+    ticket_macro_updates = db.relationship(
+        "TicketMacro",
+        back_populates="updated_by",
+        foreign_keys="TicketMacro.updated_by_user_id",
+    )
+    ticket_macro_usages = db.relationship(
+        "TicketMacroUsage",
+        back_populates="used_by",
+        foreign_keys="TicketMacroUsage.used_by_user_id",
+    )
+    bulk_operations = db.relationship(
+        "BulkOperation",
+        back_populates="initiated_by",
+        foreign_keys="BulkOperation.initiated_by_user_id",
+    )
+    export_jobs = db.relationship(
+        "ExportJob",
+        back_populates="requested_by",
+        foreign_keys="ExportJob.requested_by_user_id",
+    )
+    fraud_checks = db.relationship(
+        "RegistrationFraudCheck",
+        back_populates="user",
+        foreign_keys="RegistrationFraudCheck.user_id",
+    )
+    fraud_reviews = db.relationship(
+        "RegistrationFraudCheck",
+        back_populates="reviewed_by",
+        foreign_keys="RegistrationFraudCheck.reviewed_by_user_id",
+    )
+    requested_approvals = db.relationship(
+        "ApprovalRequest",
+        back_populates="requested_by",
+        foreign_keys="ApprovalRequest.requested_by_user_id",
+    )
+    executed_approvals = db.relationship(
+        "ApprovalRequest",
+        back_populates="executed_by",
+        foreign_keys="ApprovalRequest.executed_by_user_id",
+    )
+    approval_decisions = db.relationship(
+        "ApprovalDecision",
+        back_populates="decided_by",
+        foreign_keys="ApprovalDecision.decided_by_user_id",
+    )
+    created_ssh_keys = db.relationship(
+        "ClientSSHKey",
+        back_populates="created_by",
+        foreign_keys="ClientSSHKey.created_by_user_id",
+    )
 
     def set_password(self, password: str) -> None:
         self.password_hash = bcrypt.generate_password_hash(password).decode("utf-8")
@@ -182,6 +237,10 @@ class Client(TimestampMixin, db.Model):
     webhook_endpoints = db.relationship("WebhookEndpoint", back_populates="client", cascade="all, delete-orphan")
     resource_alerts = db.relationship("ResourceLimitAlert", back_populates="client", cascade="all, delete-orphan")
     migration_jobs = db.relationship("MigrationJob", back_populates="client", cascade="all, delete-orphan")
+    domain_registrations = db.relationship("DomainRegistration", back_populates="client", cascade="all, delete-orphan")
+    overdue_reminders = db.relationship("OverdueReminder", back_populates="client", cascade="all, delete-orphan")
+    approval_requests = db.relationship("ApprovalRequest", back_populates="client", cascade="all, delete-orphan")
+    ssh_keys = db.relationship("ClientSSHKey", back_populates="client", cascade="all, delete-orphan")
 
 
 class ClientBalance(TimestampMixin, db.Model):
@@ -224,6 +283,31 @@ class BillingCycle(TimestampMixin, db.Model):
     status = db.Column(db.String(32), nullable=False, default="scheduled", index=True)
 
     client_service = db.relationship("ClientService", back_populates="billing_cycles")
+
+
+class OverdueReminder(TimestampMixin, db.Model):
+    __tablename__ = "overdue_reminders"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
+    client_service_id = db.Column(db.Integer, db.ForeignKey("client_services.id"), nullable=False, index=True)
+    billing_cycle_id = db.Column(db.Integer, db.ForeignKey("billing_cycles.id"), nullable=False, index=True)
+    reminder_type = db.Column(db.String(32), nullable=False, default="email", index=True)
+    day_offset = db.Column(db.Integer, nullable=False, default=0)
+    status = db.Column(db.String(32), nullable=False, default="sent", index=True)
+    recipient = db.Column(db.String(255), nullable=True)
+    subject = db.Column(db.String(255), nullable=True)
+    message = db.Column(db.String(500), nullable=True)
+    sent_at = db.Column(db.DateTime, nullable=True, index=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    client = db.relationship("Client", back_populates="overdue_reminders")
+    client_service = db.relationship("ClientService")
+    billing_cycle = db.relationship("BillingCycle")
+
+    __table_args__ = (
+        UniqueConstraint("billing_cycle_id", "reminder_type", "day_offset", name="uq_overdue_reminder_cycle_type_day"),
+    )
 
 
 class ServicePlan(TimestampMixin, db.Model):
@@ -349,6 +433,7 @@ class Domain(TimestampMixin, db.Model):
     subdomains = db.relationship("Subdomain", back_populates="domain", cascade="all, delete-orphan")
     dns_zone = db.relationship("DNSZone", back_populates="domain", uselist=False)
     ssl_certificate = db.relationship("SSLCertificate", back_populates="domain", uselist=False)
+    registration = db.relationship("DomainRegistration", back_populates="domain", uselist=False, cascade="all, delete-orphan")
 
 
 class Subdomain(TimestampMixin, db.Model):
@@ -490,6 +575,28 @@ class SSLCertificate(TimestampMixin, db.Model):
         return None
 
 
+class DomainRegistration(TimestampMixin, db.Model):
+    __tablename__ = "domain_registrations"
+
+    id = db.Column(db.Integer, primary_key=True)
+    domain_id = db.Column(db.Integer, db.ForeignKey("domains.id"), unique=True, nullable=False, index=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
+    registrar = db.Column(db.String(64), nullable=False, default="mock", index=True)
+    external_registration_id = db.Column(db.String(191), nullable=True, unique=True, index=True)
+    status = db.Column(db.String(32), nullable=False, default="pending", index=True)
+    registered_on = db.Column(db.Date, nullable=True)
+    expires_on = db.Column(db.Date, nullable=True, index=True)
+    auto_renew = db.Column(db.Boolean, nullable=False, default=True)
+    name_servers_json = db.Column(db.JSON, nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+    last_synced_at = db.Column(db.DateTime, nullable=True, index=True)
+    last_sync_status = db.Column(db.String(32), nullable=True, index=True)
+    last_sync_message = db.Column(db.String(255), nullable=True)
+
+    domain = db.relationship("Domain", back_populates="registration")
+    client = db.relationship("Client", back_populates="domain_registrations")
+
+
 class Mailbox(TimestampMixin, db.Model):
     __tablename__ = "mailboxes"
 
@@ -548,6 +655,29 @@ class Backup(TimestampMixin, db.Model):
     verification_runs = db.relationship("BackupVerificationRun", back_populates="backup", cascade="all, delete-orphan")
 
 
+class ClientSSHKey(TimestampMixin, db.Model):
+    __tablename__ = "client_ssh_keys"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    label = db.Column(db.String(120), nullable=False)
+    key_type = db.Column(db.String(32), nullable=False, index=True)
+    public_key = db.Column(db.Text, nullable=False)
+    fingerprint_sha256 = db.Column(db.String(128), nullable=False, index=True)
+    status = db.Column(db.String(16), nullable=False, default="active", index=True)
+    last_installed_at = db.Column(db.DateTime, nullable=True)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    client = db.relationship("Client", back_populates="ssh_keys")
+    created_by = db.relationship("User", back_populates="created_ssh_keys", foreign_keys=[created_by_user_id])
+
+    __table_args__ = (
+        UniqueConstraint("client_id", "fingerprint_sha256", name="uq_client_ssh_key_client_fingerprint"),
+    )
+
+
 class Ticket(TimestampMixin, db.Model):
     __tablename__ = "tickets"
 
@@ -581,6 +711,12 @@ class Ticket(TimestampMixin, db.Model):
         cascade="all, delete-orphan",
         order_by="TicketAttachment.created_at.asc()",
     )
+    macro_usages = db.relationship(
+        "TicketMacroUsage",
+        back_populates="ticket",
+        cascade="all, delete-orphan",
+        order_by="TicketMacroUsage.created_at.asc()",
+    )
 
     @property
     def display_number(self) -> str:
@@ -602,6 +738,7 @@ class TicketMessage(TimestampMixin, db.Model):
     ticket = db.relationship("Ticket", back_populates="messages")
     author = db.relationship("User", back_populates="ticket_messages", foreign_keys=[author_user_id])
     attachments = db.relationship("TicketAttachment", back_populates="ticket_message", cascade="all, delete-orphan")
+    macro_usages = db.relationship("TicketMacroUsage", back_populates="ticket_message", cascade="all, delete-orphan")
 
 
 class TicketAttachment(TimestampMixin, db.Model):
@@ -619,6 +756,44 @@ class TicketAttachment(TimestampMixin, db.Model):
     ticket = db.relationship("Ticket", back_populates="attachments")
     ticket_message = db.relationship("TicketMessage", back_populates="attachments")
     uploaded_by = db.relationship("User")
+
+
+class TicketMacro(TimestampMixin, db.Model):
+    __tablename__ = "ticket_macros"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False, index=True)
+    category = db.Column(db.String(32), nullable=False, index=True)
+    visibility_scope = db.Column(db.String(32), nullable=False, default="all_staff", index=True)
+    subject_template = db.Column(db.String(200), nullable=True)
+    body_template = db.Column(db.Text, nullable=False)
+    placeholders_json = db.Column(db.JSON, nullable=True)
+    sort_order = db.Column(db.Integer, nullable=False, default=0)
+    is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    updated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+
+    created_by = db.relationship("User", back_populates="ticket_macro_creations", foreign_keys=[created_by_user_id])
+    updated_by = db.relationship("User", back_populates="ticket_macro_updates", foreign_keys=[updated_by_user_id])
+    usages = db.relationship("TicketMacroUsage", back_populates="macro", cascade="all, delete-orphan")
+
+
+class TicketMacroUsage(TimestampMixin, db.Model):
+    __tablename__ = "ticket_macro_usages"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id"), nullable=False, index=True)
+    ticket_message_id = db.Column(db.Integer, db.ForeignKey("ticket_messages.id"), nullable=True, index=True)
+    macro_id = db.Column(db.Integer, db.ForeignKey("ticket_macros.id"), nullable=False, index=True)
+    used_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    rendered_body = db.Column(db.Text, nullable=True)
+    render_error = db.Column(db.String(255), nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    ticket = db.relationship("Ticket", back_populates="macro_usages")
+    ticket_message = db.relationship("TicketMessage", back_populates="macro_usages")
+    macro = db.relationship("TicketMacro", back_populates="usages")
+    used_by = db.relationship("User", back_populates="ticket_macro_usages", foreign_keys=[used_by_user_id])
 
 
 class ClientResourceSample(TimestampMixin, db.Model):
@@ -809,6 +984,28 @@ class UserSession(TimestampMixin, db.Model):
     user = db.relationship("User", back_populates="sessions")
 
 
+class RegistrationFraudCheck(TimestampMixin, db.Model):
+    __tablename__ = "registration_fraud_checks"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    reviewed_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    email = db.Column(db.String(255), nullable=False, index=True)
+    username = db.Column(db.String(80), nullable=False, index=True)
+    ip_address = db.Column(db.String(45), nullable=True, index=True)
+    user_agent = db.Column(db.String(500), nullable=True)
+    score = db.Column(db.Integer, nullable=False, default=0, index=True)
+    risk_level = db.Column(db.String(16), nullable=False, default="low", index=True)
+    blocked = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    reasons_json = db.Column(db.JSON, nullable=True)
+    reviewed_at = db.Column(db.DateTime, nullable=True, index=True)
+    review_note = db.Column(db.String(255), nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    user = db.relationship("User", foreign_keys=[user_id], back_populates="fraud_checks")
+    reviewed_by = db.relationship("User", foreign_keys=[reviewed_by_user_id], back_populates="fraud_reviews")
+
+
 class TwoFactorBackupCode(TimestampMixin, db.Model):
     __tablename__ = "two_factor_backup_codes"
 
@@ -906,6 +1103,69 @@ class AutomationExecution(TimestampMixin, db.Model):
     __table_args__ = (UniqueConstraint("rule_id", "event_fingerprint", name="uq_automation_rule_fingerprint"),)
 
 
+class ApprovalRequest(TimestampMixin, db.Model):
+    __tablename__ = "approval_requests"
+
+    id = db.Column(db.Integer, primary_key=True)
+    action_key = db.Column(db.String(64), nullable=False, index=True)
+    target_type = db.Column(db.String(64), nullable=False, index=True)
+    target_id = db.Column(db.String(120), nullable=False, index=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=True, index=True)
+    requested_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    executed_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    status = db.Column(db.String(32), nullable=False, default="pending", index=True)
+    required_approvals = db.Column(db.Integer, nullable=False, default=1)
+    min_approver_role = db.Column(db.String(32), nullable=False, default="operator")
+    reason = db.Column(db.String(255), nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=True, index=True)
+    approved_at = db.Column(db.DateTime, nullable=True, index=True)
+    rejected_at = db.Column(db.DateTime, nullable=True, index=True)
+    executed_at = db.Column(db.DateTime, nullable=True, index=True)
+    cancelled_at = db.Column(db.DateTime, nullable=True, index=True)
+    execution_error = db.Column(db.String(500), nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    client = db.relationship("Client", back_populates="approval_requests")
+    requested_by = db.relationship(
+        "User",
+        back_populates="requested_approvals",
+        foreign_keys=[requested_by_user_id],
+    )
+    executed_by = db.relationship(
+        "User",
+        back_populates="executed_approvals",
+        foreign_keys=[executed_by_user_id],
+    )
+    decisions = db.relationship(
+        "ApprovalDecision",
+        back_populates="approval_request",
+        cascade="all, delete-orphan",
+        order_by="ApprovalDecision.created_at.asc()",
+    )
+
+
+class ApprovalDecision(TimestampMixin, db.Model):
+    __tablename__ = "approval_decisions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    approval_request_id = db.Column(db.Integer, db.ForeignKey("approval_requests.id"), nullable=False, index=True)
+    decided_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    decision = db.Column(db.String(16), nullable=False, index=True)
+    note = db.Column(db.String(255), nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    approval_request = db.relationship("ApprovalRequest", back_populates="decisions")
+    decided_by = db.relationship("User", back_populates="approval_decisions", foreign_keys=[decided_by_user_id])
+
+    __table_args__ = (
+        UniqueConstraint(
+            "approval_request_id",
+            "decided_by_user_id",
+            name="uq_approval_decision_request_user",
+        ),
+    )
+
+
 class ActivityLog(TimestampMixin, db.Model):
     __tablename__ = "activity_logs"
 
@@ -919,6 +1179,11 @@ class ActivityLog(TimestampMixin, db.Model):
     ip_address = db.Column(db.String(45), nullable=True)
     success = db.Column(db.Boolean, nullable=False, default=True, index=True)
     metadata_json = db.Column(db.JSON, nullable=True)
+    chain_sequence = db.Column(db.Integer, nullable=True)
+    chain_prev_hash = db.Column(db.String(64), nullable=True)
+    chain_hash = db.Column(db.String(64), nullable=True, index=True)
+    chain_version = db.Column(db.String(16), nullable=True)
+    chain_legacy = db.Column(db.Boolean, nullable=False, default=False, index=True)
 
     actor = db.relationship("User", back_populates="activity_logs")
     client = db.relationship("Client")
@@ -965,6 +1230,55 @@ class SystemSetting(TimestampMixin, db.Model):
     description = db.Column(db.String(255), nullable=True)
 
 
+class BulkOperation(TimestampMixin, db.Model):
+    __tablename__ = "bulk_operations"
+
+    id = db.Column(db.Integer, primary_key=True)
+    operation_type = db.Column(db.String(64), nullable=False, index=True)
+    target_type = db.Column(db.String(32), nullable=False, index=True)
+    initiated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    dry_run = db.Column(db.Boolean, nullable=False, default=False)
+    status = db.Column(db.String(32), nullable=False, default="completed", index=True)
+    requested_filters_json = db.Column(db.JSON, nullable=True)
+    result_summary_json = db.Column(db.JSON, nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+
+    initiated_by = db.relationship("User", back_populates="bulk_operations", foreign_keys=[initiated_by_user_id])
+    items = db.relationship("BulkOperationItem", back_populates="operation", cascade="all, delete-orphan")
+
+
+class BulkOperationItem(TimestampMixin, db.Model):
+    __tablename__ = "bulk_operation_items"
+
+    id = db.Column(db.Integer, primary_key=True)
+    bulk_operation_id = db.Column(db.Integer, db.ForeignKey("bulk_operations.id"), nullable=False, index=True)
+    entity_type = db.Column(db.String(64), nullable=False)
+    entity_id = db.Column(db.String(120), nullable=False)
+    success = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    message = db.Column(db.String(500), nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    operation = db.relationship("BulkOperation", back_populates="items")
+
+
+class ExportJob(TimestampMixin, db.Model):
+    __tablename__ = "export_jobs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    dataset = db.Column(db.String(32), nullable=False, index=True)
+    format = db.Column(db.String(16), nullable=False, index=True)
+    requested_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    filters_json = db.Column(db.JSON, nullable=True)
+    status = db.Column(db.String(32), nullable=False, default="completed", index=True)
+    row_count = db.Column(db.Integer, nullable=False, default=0)
+    error_message = db.Column(db.String(500), nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    requested_by = db.relationship("User", back_populates="export_jobs", foreign_keys=[requested_by_user_id])
+
+
 Index("ix_activity_logs_entity", ActivityLog.entity_type, ActivityLog.entity_id)
 Index("ix_billing_cycles_due_status", BillingCycle.due_date, BillingCycle.status)
 Index("ix_client_services_type_status", ClientService.service_type, ClientService.status)
@@ -974,6 +1288,8 @@ Index("ix_tickets_client_status", Ticket.client_id, Ticket.status)
 Index("ix_tickets_status_priority", Ticket.status, Ticket.priority)
 Index("ix_ticket_messages_ticket_created", TicketMessage.ticket_id, TicketMessage.created_at)
 Index("ix_ticket_attachments_ticket_created", TicketAttachment.ticket_id, TicketAttachment.created_at)
+Index("ix_ticket_macros_category_active", TicketMacro.category, TicketMacro.is_active)
+Index("ix_ticket_macro_usages_ticket_created", TicketMacroUsage.ticket_id, TicketMacroUsage.created_at)
 Index("ix_resource_samples_client_created", ClientResourceSample.client_id, ClientResourceSample.created_at)
 Index("ix_restore_jobs_client_status", BackupRestoreJob.client_id, BackupRestoreJob.status)
 Index("ix_api_tokens_user_revoked", ApiToken.user_id, ApiToken.revoked_at)
@@ -983,3 +1299,13 @@ Index("ix_webhook_delivery_retry", WebhookDelivery.next_retry_at, WebhookDeliver
 Index("ix_status_events_public_state", StatusEvent.is_public, StatusEvent.state)
 Index("ix_migration_jobs_client_status", MigrationJob.client_id, MigrationJob.status)
 Index("ix_automation_exec_rule_status", AutomationExecution.rule_id, AutomationExecution.status)
+Index("ix_approval_requests_action_status", ApprovalRequest.action_key, ApprovalRequest.status)
+Index("ix_approval_requests_target_status", ApprovalRequest.target_type, ApprovalRequest.target_id, ApprovalRequest.status)
+Index("ix_approval_decisions_request_decision", ApprovalDecision.approval_request_id, ApprovalDecision.decision)
+Index("ix_activity_logs_chain_integrity", ActivityLog.chain_sequence, ActivityLog.chain_hash)
+Index("ix_client_ssh_keys_client_status", ClientSSHKey.client_id, ClientSSHKey.status)
+Index("ix_bulk_operations_type_status", BulkOperation.operation_type, BulkOperation.status)
+Index("ix_export_jobs_dataset_created", ExportJob.dataset, ExportJob.created_at)
+Index("ix_domain_registrations_provider_expiry", DomainRegistration.registrar, DomainRegistration.expires_on)
+Index("ix_overdue_reminders_client_sent", OverdueReminder.client_id, OverdueReminder.sent_at)
+Index("ix_fraud_checks_level_created", RegistrationFraudCheck.risk_level, RegistrationFraudCheck.created_at)

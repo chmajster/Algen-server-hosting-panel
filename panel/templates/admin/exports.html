@@ -1,0 +1,83 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">{{ title }}</h1>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-12 col-lg-6">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Eksport klienci</h2>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='clients', format='csv') }}">CSV</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='clients', format='xlsx') }}">XLSX</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Eksport faktury/cykle</h2>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='invoices', format='csv') }}">CSV</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='invoices', format='xlsx') }}">XLSX</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Eksport ticketow</h2>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='tickets', format='csv') }}">CSV</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='tickets', format='xlsx') }}">XLSX</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Eksport zuzycia zasobow</h2>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='resource_usage', format='csv') }}">CSV</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='resource_usage', format='xlsx') }}">XLSX</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="surface-card p-3">
+  <h2 class="h5 mb-3">Historia eksportow</h2>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Dataset</th>
+          <th>Format</th>
+          <th>Status</th>
+          <th>Wiersze</th>
+          <th>Zadane przez</th>
+          <th>Czas</th>
+          <th>Filtry</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td>#{{ job.id }}</td>
+          <td>{{ job.dataset }}</td>
+          <td>{{ job.format }}</td>
+          <td>{{ job.status }}</td>
+          <td>{{ job.row_count }}</td>
+          <td>{{ job.requested_by.username if job.requested_by else '-' }}</td>
+          <td>{{ job.created_at.strftime('%Y-%m-%d %H:%M') if job.created_at else '-' }}</td>
+          <td class="small">{{ job.filters_json or {} }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="text-center text-secondary py-4">Brak historii eksportow.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
