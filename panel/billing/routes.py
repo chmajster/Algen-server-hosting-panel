@@ -7,11 +7,11 @@ from flask import Blueprint, abort, current_app, flash, redirect, render_templat
 from flask_login import current_user, login_required
 
 from panel.extensions import csrf, db
-from panel.forms.billing import ClientTopupForm
+from panel.forms.billing import ClientPlanChangeForm, ClientTopupForm
 from panel.forms.services import ClientServiceForm, ServicePlanForm
 from panel.models import BillingTransaction, Client, ClientService, OnlinePayment, ServicePlan
 from panel.services.audit import log_activity
-from panel.services.billing import adjust_balance, schedule_initial_cycle
+from panel.services.billing import adjust_balance, change_service_plan_with_proration, plan_price_for_period, schedule_initial_cycle
 from panel.services.payments import (
     PaymentProviderError,
     create_checkout_session,
@@ -21,6 +21,7 @@ from panel.services.payments import (
     parse_stripe_webhook_event,
     retrieve_checkout_session,
 )
+from panel.services.webhooks import dispatch_webhook_event
 from panel.utils.decorators import active_account_required, roles_required
 from panel.utils.query import client_choices, current_client, service_plan_choices
 
@@ -43,6 +44,23 @@ def _safe_amount_limit(config_key: str, fallback: str) -> Decimal:
     except InvalidOperation:
         value = Decimal(fallback)
     return value.quantize(Decimal("0.01"))
+
+
+def _plan_change_choices_for_service(service: ClientService) -> list[tuple[int, str]]:
+    choices: list[tuple[int, str]] = []
+    plans = ServicePlan.query.filter_by(is_active=True).order_by(ServicePlan.name.asc()).all()
+    for plan in plans:
+        amount = plan_price_for_period(plan, service.billing_period)
+        choices.append((plan.id, f"{plan.name} ({amount} PLN/{service.billing_period})"))
+    return choices
+
+
+def _plan_change_form_for_service(service: ClientService, *, prefix: str) -> ClientPlanChangeForm:
+    form = ClientPlanChangeForm(prefix=prefix)
+    form.target_plan_id.choices = _plan_change_choices_for_service(service)
+    if service.service_plan_id and request.method == "GET":
+        form.target_plan_id.data = service.service_plan_id
+    return form
 
 
 def _complete_online_payment(
@@ -96,6 +114,20 @@ def _complete_online_payment(
         client=payment.client,
         actor=payment.actor,
         metadata={"provider": payment.provider, "amount": str(payment.amount), "source": source},
+    )
+    dispatch_webhook_event(
+        "payment.completed",
+        {
+            "payment_id": payment.id,
+            "client_id": payment.client_id,
+            "amount": str(payment.amount),
+            "currency": payment.currency,
+            "provider": payment.provider,
+            "source": source,
+            "external_id": payment.external_id,
+        },
+        client=payment.client,
+        auto_commit=False,
     )
     return True
 
@@ -267,6 +299,16 @@ def client_billing():
     client = current_client()
     transactions = BillingTransaction.query.filter_by(client_id=client.id).order_by(BillingTransaction.created_at.desc()).all()
     topup_form = ClientTopupForm()
+    hosting_services = (
+        ClientService.query.filter_by(client_id=client.id, service_type="hosting")
+        .filter(ClientService.status != "deleted")
+        .order_by(ClientService.created_at.desc())
+        .all()
+    )
+    plan_change_forms: dict[int, ClientPlanChangeForm] = {}
+    for service in hosting_services:
+        plan_change_forms[service.id] = _plan_change_form_for_service(service, prefix=f"plan-{service.id}")
+
     payments_enabled = is_online_payments_enabled()
     recent_online_payments = []
     if payments_enabled:
@@ -281,10 +323,64 @@ def client_billing():
         client=client,
         transactions=transactions,
         topup_form=topup_form,
+        hosting_services=hosting_services,
+        plan_change_forms=plan_change_forms,
         online_payments_enabled=payments_enabled,
         online_payments_provider=online_payments_provider(),
         recent_online_payments=recent_online_payments,
     )
+
+
+@billing_bp.route("/client/billing/services/<int:service_id>/plan-change", methods=["POST"])
+@login_required
+@roles_required("client")
+@active_account_required
+def client_change_plan(service_id: int):
+    client = current_client()
+    service = ClientService.query.get_or_404(service_id)
+    if service.client_id != client.id:
+        abort(404)
+    if service.service_type != "hosting":
+        flash("Zmiana planu jest dostepna tylko dla uslug hostingowych.", "warning")
+        return redirect(url_for("billing.client_billing"))
+
+    form = _plan_change_form_for_service(service, prefix=f"plan-{service.id}")
+    if not form.validate_on_submit():
+        flash("Nieprawidlowe dane zmiany planu.", "danger")
+        return redirect(url_for("billing.client_billing"))
+
+    new_plan = ServicePlan.query.get_or_404(form.target_plan_id.data)
+    summary = change_service_plan_with_proration(service, new_plan, actor=current_user)
+    if not summary.get("changed"):
+        flash("Wybrany plan jest juz przypisany do tej uslugi.", "info")
+        return redirect(url_for("billing.client_billing"))
+
+    db.session.commit()
+    dispatch_webhook_event(
+        "service.plan_changed",
+        {
+            "service_id": service.id,
+            "service_name": service.name,
+            "billing_period": service.billing_period,
+            "old_plan_id": summary.get("old_plan_id"),
+            "new_plan_id": summary.get("new_plan_id"),
+            "old_amount": str(summary.get("old_amount", "0.00")),
+            "new_amount": str(summary.get("new_amount", "0.00")),
+            "balance_delta": str(summary.get("balance_delta", "0.00")),
+            "remaining_days": summary.get("remaining_days"),
+            "cycle_days": summary.get("cycle_days"),
+        },
+        client=client,
+    )
+
+    balance_delta = Decimal(str(summary.get("balance_delta", "0.00")))
+    if balance_delta < 0:
+        flash(f"Plan uslugi zostal zmieniony. Naliczono doplate {abs(balance_delta)} PLN.", "success")
+    elif balance_delta > 0:
+        flash(f"Plan uslugi zostal zmieniony. Przyznano zwrot {balance_delta} PLN.", "success")
+    else:
+        flash("Plan uslugi zostal zmieniony bez doplaty i zwrotu.", "success")
+    return redirect(url_for("billing.client_billing"))
 
 
 @billing_bp.route("/client/billing/topup", methods=["POST"])

@@ -5,5 +5,8 @@
     <div class="col-12 col-md-4"><div class="surface-card p-3"><div class="text-secondary">{{ metric.label }}</div><div class="display-6">{{ metric.value }}{{ metric.unit }}</div></div></div>
   {% endfor %}
 </div>
+<div class="mb-3">
+  <a class="btn btn-outline-primary btn-sm" href="{{ url_for('monitoring.admin_clients') }}">Zuzycie zasobow klientow</a>
+</div>
 <div class="surface-card p-3"><h1 class="h3 mb-3">Status usług</h1><div class="row g-3">{% for service_name, state in service_states.items() %}<div class="col-6 col-lg-3"><div class="border rounded p-3 h-100"><div class="text-secondary">{{ service_name }}</div><div class="h5 mb-0">{{ state }}</div></div></div>{% endfor %}</div></div>
 {% endblock %}

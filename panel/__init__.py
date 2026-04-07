@@ -60,6 +60,7 @@ def register_security_hooks(app: Flask) -> None:
 
 
 def register_blueprints(app: Flask) -> None:
+    from panel.api.routes import api_bp
     from panel.admin.routes import admin_bp
     from panel.auth.routes import auth_bp
     from panel.backups.routes import backups_bp
@@ -75,8 +76,10 @@ def register_blueprints(app: Flask) -> None:
     from panel.monitoring.routes import monitoring_bp
     from panel.ssl.routes import ssl_bp
     from panel.tickets.routes import tickets_bp
+    from panel.webhooks.routes import webhooks_bp
 
     for blueprint in [
+        api_bp,
         auth_bp,
         admin_bp,
         client_bp,
@@ -92,6 +95,7 @@ def register_blueprints(app: Flask) -> None:
         monitoring_bp,
         hosts_bp,
         tickets_bp,
+        webhooks_bp,
     ]:
         app.register_blueprint(blueprint)
 
@@ -100,9 +104,13 @@ def register_cli(app: Flask) -> None:
     import click
 
     from panel.extensions import db
+    from panel.models import BackupRestoreJob
     from panel.seed import seed_defaults
     from panel.services.billing import run_billing_cycle
+    from panel.services.backup_restore import process_restore_job
+    from panel.services.client_resources import record_client_resource_samples
     from panel.services.smoketest import run_app_smoke_test, write_smoke_test_log
+    from panel.services.ticket_sla import escalate_due_tickets
 
     @app.cli.command("seed-data")
     @click.option("--admin-username", default="admin")
@@ -189,6 +197,33 @@ def register_cli(app: Flask) -> None:
         processed = run_billing_cycle()
         db.session.commit()
         click.echo(f"Przetworzono cykli: {processed}")
+
+    @app.cli.command("run-ticket-escalations")
+    def run_ticket_escalations():
+        processed = escalate_due_tickets()
+        click.echo(f"Eskalowano ticketow: {processed}")
+
+    @app.cli.command("collect-resource-samples")
+    def collect_resource_samples():
+        samples = record_client_resource_samples()
+        click.echo(f"Zapisano probek monitoringu: {samples}")
+
+    @app.cli.command("process-restore-jobs")
+    @click.option("--limit", default=50, show_default=True, type=int)
+    def process_restore_jobs(limit: int):
+        jobs = (
+            BackupRestoreJob.query.filter_by(status="queued", restore_type="files")
+            .order_by(BackupRestoreJob.created_at.asc())
+            .limit(max(1, limit))
+            .all()
+        )
+        processed = 0
+        for job in jobs:
+            process_restore_job(job)
+            processed += 1
+        if processed:
+            db.session.commit()
+        click.echo(f"Przetworzono jobow restore: {processed}")
 
     @app.cli.command("smoke-test")
     @click.option("--source", default="cli", show_default=True)

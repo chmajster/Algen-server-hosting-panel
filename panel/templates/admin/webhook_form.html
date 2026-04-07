@@ -1,0 +1,40 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-4">
+  <h1 class="h3 mb-4">{{ title }}</h1>
+  <form method="post" class="row g-3">
+    {{ form.hidden_tag() }}
+    <div class="col-12 col-lg-6">
+      {{ form.name.label(class="form-label") }}
+      {{ form.name(class="form-control") }}
+    </div>
+    <div class="col-12 col-lg-6">
+      {{ form.client_id.label(class="form-label") }}
+      {{ form.client_id(class="form-select") }}
+    </div>
+    <div class="col-12">
+      {{ form.target_url.label(class="form-label") }}
+      {{ form.target_url(class="form-control", placeholder="https://example.com/hooks/hosting") }}
+    </div>
+    <div class="col-12">
+      {{ form.secret.label(class="form-label") }}
+      {{ form.secret(class="form-control", placeholder="opcjonalny secret do podpisu") }}
+    </div>
+    <div class="col-12">
+      {{ form.event_types.label(class="form-label") }}
+      {{ form.event_types(class="form-select", size="8", multiple=true) }}
+      <div class="form-text">Pozostaw puste, aby odbierac wszystkie eventy.</div>
+    </div>
+    <div class="col-12">
+      <div class="form-check">
+        {{ form.is_active(class="form-check-input") }}
+        {{ form.is_active.label(class="form-check-label") }}
+      </div>
+    </div>
+    <div class="col-12">
+      <button class="btn btn-primary">{{ form.submit.label.text }}</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('webhooks.index') }}">Anuluj</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

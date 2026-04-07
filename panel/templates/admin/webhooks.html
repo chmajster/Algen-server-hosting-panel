@@ -1,0 +1,95 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Webhooki</h1>
+  <a class="btn btn-primary" href="{{ url_for('webhooks.create') }}">Nowy webhook</a>
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <h2 class="h5 mb-3">Endpointy</h2>
+  {% if endpoints %}
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Nazwa</th>
+          <th>URL</th>
+          <th>Klient</th>
+          <th>Eventy</th>
+          <th>Status</th>
+          <th>Ostatni sukces</th>
+          <th>Ostatni blad</th>
+          <th>Akcje</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for endpoint in endpoints %}
+        <tr>
+          <td>{{ endpoint.name }}</td>
+          <td><code>{{ endpoint.target_url }}</code></td>
+          <td>{{ endpoint.client.user.username if endpoint.client and endpoint.client.user else 'GLOBAL' }}</td>
+          <td>
+            {% if endpoint.event_types_json %}
+              {{ endpoint.event_types_json|join(', ') }}
+            {% else %}
+              wszystkie
+            {% endif %}
+          </td>
+          <td>{{ 'aktywny' if endpoint.is_active else 'wylaczony' }}</td>
+          <td>{{ endpoint.last_success_at.strftime('%Y-%m-%d %H:%M') if endpoint.last_success_at else '-' }}</td>
+          <td>{{ endpoint.last_error or '-' }}</td>
+          <td>
+            <div class="d-flex flex-wrap gap-2">
+              <a class="btn btn-sm btn-outline-primary" href="{{ url_for('webhooks.edit', endpoint_id=endpoint.id) }}">Edytuj</a>
+              <form method="post" action="{{ url_for('webhooks.send_test', endpoint_id=endpoint.id) }}">
+                <button class="btn btn-sm btn-outline-secondary">Test</button>
+              </form>
+              <form method="post" action="{{ url_for('webhooks.delete', endpoint_id=endpoint.id) }}" onsubmit="return confirm('Usunac webhook?');">
+                <button class="btn btn-sm btn-outline-danger">Usun</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-secondary mb-0">Brak skonfigurowanych webhookow.</p>
+  {% endif %}
+</div>
+
+<div class="surface-card p-3">
+  <h2 class="h5 mb-3">Ostatnie dostarczenia</h2>
+  {% if deliveries %}
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Czas</th>
+          <th>Endpoint</th>
+          <th>Event</th>
+          <th>HTTP</th>
+          <th>Sukces</th>
+          <th>Odpowiedz</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for delivery in deliveries %}
+        <tr>
+          <td>{{ delivery.attempted_at.strftime('%Y-%m-%d %H:%M:%S') if delivery.attempted_at else '-' }}</td>
+          <td>{{ delivery.endpoint.name }}</td>
+          <td>{{ delivery.event_type }}</td>
+          <td>{{ delivery.status_code if delivery.status_code is not none else '-' }}</td>
+          <td>{{ 'tak' if delivery.success else 'nie' }}</td>
+          <td>{{ delivery.response_excerpt or '-' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-secondary mb-0">Brak prob dostarczenia.</p>
+  {% endif %}
+</div>
+{% endblock %}

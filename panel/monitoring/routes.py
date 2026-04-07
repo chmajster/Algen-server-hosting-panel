@@ -7,10 +7,13 @@ from flask import Blueprint, abort, current_app, jsonify, render_template, reque
 from flask_login import login_required
 
 from panel.extensions import get_client_ip, limiter
+from panel.models import ClientResourceSample
+from panel.services.client_resources import collect_client_resource_usage
 from panel.services.monitoring import collect_server_metrics, service_statuses
 from panel.services.smoketest import run_app_smoke_test, write_smoke_test_log
+from panel.utils.decorators import active_account_required, roles_required
+from panel.utils.query import current_client
 from panel.utils.security import is_ip_allowed
-from panel.utils.decorators import roles_required
 
 
 monitoring_bp = Blueprint("monitoring", __name__)
@@ -25,6 +28,54 @@ def index():
         metrics=collect_server_metrics(),
         service_states=service_statuses(),
     )
+
+
+@monitoring_bp.route("/admin/monitoring/clients")
+@login_required
+@roles_required("administrator")
+def admin_clients():
+    usage = collect_client_resource_usage()
+    usage_by_client = {item["client_id"]: item for item in usage}
+    latest_samples = (
+        ClientResourceSample.query.order_by(ClientResourceSample.client_id.asc(), ClientResourceSample.created_at.desc()).all()
+    )
+
+    latest_by_client: dict[int, ClientResourceSample] = {}
+    for sample in latest_samples:
+        latest_by_client.setdefault(sample.client_id, sample)
+
+    rows = []
+    for client_id, snapshot in usage_by_client.items():
+        rows.append(
+            {
+                "snapshot": snapshot,
+                "latest_sample": latest_by_client.get(client_id),
+            }
+        )
+
+    rows.sort(key=lambda item: item["snapshot"]["username"])
+    return render_template("monitoring/admin_clients.html", rows=rows)
+
+
+@monitoring_bp.route("/client/monitoring")
+@login_required
+@roles_required("client")
+@active_account_required
+def client_usage():
+    client = current_client()
+    snapshot = None
+    for item in collect_client_resource_usage():
+        if item.get("client_id") == client.id:
+            snapshot = item
+            break
+
+    history = (
+        ClientResourceSample.query.filter_by(client_id=client.id)
+        .order_by(ClientResourceSample.created_at.desc())
+        .limit(30)
+        .all()
+    )
+    return render_template("monitoring/client_usage.html", snapshot=snapshot, history=history)
 
 
 def _smoke_token_is_valid() -> tuple[bool, bool]:

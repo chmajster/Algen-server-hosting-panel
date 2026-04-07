@@ -72,6 +72,14 @@ class Config:
         "TICKETS_EMAIL_SUBJECT_STAFF_REPLY",
         "Nowa odpowiedz supportu: {ticket}",
     )
+    TICKETS_ATTACHMENT_MAX_BYTES = int(os.getenv("TICKETS_ATTACHMENT_MAX_BYTES", str(5 * 1024 * 1024)))
+    TICKETS_ATTACHMENT_ALLOWED_EXTENSIONS = os.getenv(
+        "TICKETS_ATTACHMENT_ALLOWED_EXTENSIONS",
+        "txt,pdf,png,jpg,jpeg,gif,zip,tar,gz,log,csv,json",
+    )
+    TICKETS_SLA_FIRST_RESPONSE_MINUTES = int(os.getenv("TICKETS_SLA_FIRST_RESPONSE_MINUTES", "120"))
+    TICKETS_ESCALATION_MINUTES = int(os.getenv("TICKETS_ESCALATION_MINUTES", "240"))
+    TICKETS_ESCALATION_ENABLED = os.getenv("TICKETS_ESCALATION_ENABLED", "true").lower() == "true"
     BILLING_GRACE_DAYS = int(os.getenv("BILLING_GRACE_DAYS", "3"))
     BILLING_AUTO_RESUME = os.getenv("BILLING_AUTO_RESUME", "true").lower() == "true"
     ONLINE_PAYMENTS_ENABLED = os.getenv("ONLINE_PAYMENTS_ENABLED", "false").lower() == "true"
@@ -104,6 +112,7 @@ class Config:
     SMOKE_TEST_API_RATELIMIT = os.getenv("SMOKE_TEST_API_RATELIMIT", "5 per minute")
     SMOKE_TEST_SCHEDULE_ENABLED = os.getenv("SMOKE_TEST_SCHEDULE_ENABLED", "true").lower() == "true"
     SMOKE_TEST_INTERVAL = os.getenv("SMOKE_TEST_INTERVAL", "*:0/15")
+    WEBHOOKS_ENABLED = os.getenv("WEBHOOKS_ENABLED", "true").lower() == "true"
     ADMIN_LOCAL_ONLY = os.getenv("ADMIN_LOCAL_ONLY", "true").lower() == "true"
     ADMIN_ALLOWED_NETWORKS = os.getenv(
         "ADMIN_ALLOWED_NETWORKS",

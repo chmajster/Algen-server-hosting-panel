@@ -72,6 +72,55 @@
 {% endif %}
 {% endif %}
 
+<div class="surface-card p-3 mb-3">
+  <h5 class="mb-3">Zmiana planu hostingu</h5>
+  {% if hosting_services %}
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Usluga</th>
+          <th>Aktualny plan</th>
+          <th>Kwota cykliczna</th>
+          <th>Zmien plan</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for service in hosting_services %}
+        {% set plan_form = plan_change_forms.get(service.id) %}
+        <tr>
+          <td>
+            <div class="fw-semibold">{{ service.name }}</div>
+            <div class="small text-secondary">{{ service.billing_period }}</div>
+          </td>
+          <td>{{ service.plan.name if service.plan else '-' }}</td>
+          <td>{{ service.recurring_amount }}</td>
+          <td>
+            {% if plan_form and plan_form.target_plan_id.choices %}
+            <form method="post" action="{{ url_for('billing.client_change_plan', service_id=service.id) }}" class="row g-2 align-items-center">
+              {{ plan_form.hidden_tag() }}
+              <div class="col-12 col-xl-8">
+                {{ plan_form.target_plan_id(class="form-select form-select-sm") }}
+              </div>
+              <div class="col-12 col-xl-auto">
+                {{ plan_form.submit(class="btn btn-sm btn-outline-primary") }}
+              </div>
+            </form>
+            {% else %}
+            <span class="text-secondary small">Brak dostepnych planow.</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="small text-secondary mb-0">Roznica ceny jest liczona proporcjonalnie do pozostalego czasu biezacego okresu rozliczeniowego.</p>
+  {% else %}
+  <p class="text-secondary mb-0">Brak aktywnych uslug hostingowych do zmiany planu.</p>
+  {% endif %}
+</div>
+
 <div class="surface-card p-3">
   <div class="table-responsive">
     <table class="table">

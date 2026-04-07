@@ -95,7 +95,30 @@ def _deliver(endpoint: WebhookEndpoint, event_type: str, body: str, payload: dic
     return delivery
 
 
-def dispatch_webhook_event(event_type: str, payload: dict, *, client: Client | None = None) -> int:
+def deliver_to_endpoint(
+    endpoint: WebhookEndpoint,
+    event_type: str,
+    payload: dict,
+    *,
+    auto_commit: bool = True,
+) -> WebhookDelivery:
+    payload = dict(payload or {})
+    payload.setdefault("event", event_type)
+    payload.setdefault("timestamp_utc", datetime.utcnow().isoformat())
+    body = json.dumps(payload, ensure_ascii=False)
+    delivery = _deliver(endpoint, event_type, body, payload)
+    if auto_commit:
+        db.session.commit()
+    return delivery
+
+
+def dispatch_webhook_event(
+    event_type: str,
+    payload: dict,
+    *,
+    client: Client | None = None,
+    auto_commit: bool = True,
+) -> int:
     if not bool(current_app.config.get("WEBHOOKS_ENABLED", True)):
         return 0
 
@@ -116,6 +139,6 @@ def dispatch_webhook_event(event_type: str, payload: dict, *, client: Client | N
         _deliver(endpoint, event_type, body, payload)
         delivered += 1
 
-    if delivered:
+    if delivered and auto_commit:
         db.session.commit()
     return delivered

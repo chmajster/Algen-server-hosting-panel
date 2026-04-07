@@ -1,0 +1,94 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<h1 class="h3 mb-3">Zuzycie zasobow</h1>
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-4">
+    <div class="surface-card p-3">
+      <div class="text-secondary">CPU</div>
+      <div class="h4 mb-0">{{ (snapshot.cpu_percent ~ '%') if snapshot and snapshot.cpu_percent is not none else '-' }}</div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="surface-card p-3">
+      <div class="text-secondary">RAM</div>
+      <div class="h4 mb-0">
+        {% if snapshot and snapshot.memory_mb is not none %}
+          {{ snapshot.memory_mb }} MB
+          {% if snapshot.memory_limit_mb is not none %}
+            / {{ snapshot.memory_limit_mb }} MB
+          {% endif %}
+        {% else %}
+          -
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="surface-card p-3">
+      <div class="text-secondary">Dysk</div>
+      <div class="h4 mb-0">{{ (snapshot.disk_mb ~ ' MB') if snapshot else '-' }}</div>
+    </div>
+  </div>
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <h2 class="h5 mb-3">Aktualny snapshot</h2>
+  {% if snapshot %}
+  <dl class="row mb-0">
+    <dt class="col-sm-3">Kontener</dt>
+    <dd class="col-sm-9"><code>{{ snapshot.container }}</code></dd>
+    <dt class="col-sm-3">CPU</dt>
+    <dd class="col-sm-9">{{ snapshot.cpu_percent if snapshot.cpu_percent is not none else '-' }}%</dd>
+    <dt class="col-sm-3">RAM</dt>
+    <dd class="col-sm-9">
+      {% if snapshot.memory_mb is not none %}
+        {{ snapshot.memory_mb }} MB{% if snapshot.memory_limit_mb is not none %} / {{ snapshot.memory_limit_mb }} MB{% endif %}
+      {% else %}
+        -
+      {% endif %}
+    </dd>
+    <dt class="col-sm-3">Dysk</dt>
+    <dd class="col-sm-9">{{ snapshot.disk_mb }} MB</dd>
+    <dt class="col-sm-3">Inody</dt>
+    <dd class="col-sm-9">{{ snapshot.inode_count }}</dd>
+  </dl>
+  {% else %}
+  <p class="text-secondary mb-0">Brak dostepnych danych monitoringu.</p>
+  {% endif %}
+</div>
+
+<div class="surface-card p-3">
+  <h2 class="h5 mb-3">Historia probek</h2>
+  {% if history %}
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Czas</th>
+          <th>CPU</th>
+          <th>RAM</th>
+          <th>Limit RAM</th>
+          <th>Dysk</th>
+          <th>Inody</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sample in history %}
+        <tr>
+          <td>{{ sample.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ sample.cpu_percent if sample.cpu_percent is not none else '-' }}</td>
+          <td>{{ sample.memory_mb if sample.memory_mb is not none else '-' }}</td>
+          <td>{{ sample.memory_limit_mb if sample.memory_limit_mb is not none else '-' }}</td>
+          <td>{{ sample.disk_mb if sample.disk_mb is not none else '-' }}</td>
+          <td>{{ sample.inode_count if sample.inode_count is not none else '-' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-secondary mb-0">Brak historii probek dla tego konta.</p>
+  {% endif %}
+</div>
+{% endblock %}

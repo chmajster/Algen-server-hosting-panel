@@ -1,5 +1,86 @@
 {% extends "layouts/base.html" %}
 {% block content %}
-<div class="d-flex justify-content-between mb-3"><h1 class="h3">Backupy</h1><a class="btn btn-primary" href="{{ url_for('backups.admin_create') }}">Nowy backup</a></div>
-<div class="surface-card p-3"><div class="table-responsive"><table class="table"><thead><tr><th>Klient</th><th>Typ</th><th>Status</th><th>Ścieżka</th><th>Zaplanowano</th></tr></thead><tbody>{% for backup in backups %}<tr><td>{{ backup.client.user.username }}</td><td>{{ backup.backup_type }}</td><td>{{ backup.status }}</td><td>{{ backup.storage_path }}</td><td>{{ backup.scheduled_for.strftime('%Y-%m-%d') if backup.scheduled_for else '-' }}</td></tr>{% endfor %}</tbody></table></div></div>
+<div class="d-flex justify-content-between mb-3">
+	<h1 class="h3">Backupy</h1>
+	<a class="btn btn-primary" href="{{ url_for('backups.admin_create') }}">Nowy backup</a>
+</div>
+
+<div class="surface-card p-3 mb-3">
+	{% if backups %}
+	<div class="table-responsive">
+		<table class="table align-middle">
+			<thead>
+				<tr>
+					<th>Klient</th>
+					<th>Typ</th>
+					<th>Status</th>
+					<th>Sciezka</th>
+					<th>Zaplanowano</th>
+					<th>Akcja</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for backup in backups %}
+				<tr>
+					<td>{{ backup.client.user.username }}</td>
+					<td>{{ backup.backup_type }}</td>
+					<td>{{ backup.status }}</td>
+					<td>{{ backup.storage_path }}</td>
+					<td>{{ backup.scheduled_for.strftime('%Y-%m-%d') if backup.scheduled_for else '-' }}</td>
+					<td>
+						<form method="post" action="{{ url_for('backups.admin_restore_request', backup_id=backup.id) }}">
+							<button class="btn btn-sm btn-outline-primary">Restore</button>
+						</form>
+					</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+	{% else %}
+	<p class="text-secondary mb-0">Brak backupow.</p>
+	{% endif %}
+</div>
+
+<div class="surface-card p-3">
+	<h2 class="h5 mb-3">Zadania restore</h2>
+	{% if restore_jobs %}
+	<div class="table-responsive">
+		<table class="table align-middle mb-0">
+			<thead>
+				<tr>
+					<th>ID</th>
+					<th>Klient</th>
+					<th>Backup</th>
+					<th>Typ</th>
+					<th>Status</th>
+					<th>Wiadomosc</th>
+					<th>Utworzono</th>
+					<th>Akcja</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for job in restore_jobs %}
+				<tr>
+					<td>#{{ job.id }}</td>
+					<td>{{ job.client.user.username }}</td>
+					<td>#{{ job.backup_id }}</td>
+					<td>{{ job.restore_type }}</td>
+					<td>{{ job.status }}</td>
+					<td>{{ job.message or '-' }}</td>
+					<td>{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+					<td>
+						<form method="post" action="{{ url_for('backups.admin_restore_process', job_id=job.id) }}">
+							<button class="btn btn-sm btn-outline-secondary">Przetworz</button>
+						</form>
+					</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+	{% else %}
+	<p class="text-secondary mb-0">Brak zadan restore.</p>
+	{% endif %}
+</div>
 {% endblock %}
