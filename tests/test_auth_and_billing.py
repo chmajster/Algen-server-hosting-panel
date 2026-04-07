@@ -911,3 +911,296 @@ def test_smoke_test_cli_command(app):
     assert result.exit_code == 0
     assert "Smoketest: OK" in result.output
     assert "[PASS]" in result.output
+
+
+def test_ticket_create_with_attachment_applies_sla(client, app):
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        "/client/tickets/new",
+        data={
+            "subject": "Blad 500 po deployu",
+            "category": "hosting",
+            "priority": "high",
+            "message": "Po deployu aplikacja zwraca 500.",
+            "attachment": (io.BytesIO(b"traceback"), "error.log"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "Ticket zostal utworzony" in response.get_data(as_text=True)
+
+    with app.app_context():
+        ticket = Ticket.query.order_by(Ticket.id.desc()).first()
+        assert ticket is not None
+        assert ticket.first_response_due_at is not None
+        assert ticket.first_response_at is None
+        attachment = TicketAttachment.query.filter_by(ticket_id=ticket.id).first()
+        assert attachment is not None
+        root = Path(app.config["STORAGE_ROOT"]) / "ticket_attachments"
+        assert (root / attachment.storage_path).is_file()
+
+
+def test_staff_reply_marks_first_response_with_attachment(client, app):
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+    client.post(
+        "/client/tickets/new",
+        data={
+            "subject": "Problem z SSL",
+            "category": "hosting",
+            "priority": "normal",
+            "message": "Certyfikat sie nie odnawia.",
+        },
+        follow_redirects=True,
+    )
+
+    with app.app_context():
+        ticket = Ticket.query.order_by(Ticket.id.desc()).first()
+        assert ticket is not None
+        ticket_id = ticket.id
+
+    client.get("/auth/logout", follow_redirects=True)
+    client.post(
+        "/auth/login",
+        data={"username": "operator", "password": "Operator123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        f"/admin/tickets/{ticket_id}",
+        data={
+            "reply-message": "Naprawione i zweryfikowane.",
+            "reply-submit": "1",
+            "attachment": (io.BytesIO(b"fixed"), "fix.log"),
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+
+    with app.app_context():
+        ticket = Ticket.query.get(ticket_id)
+        assert ticket is not None
+        assert ticket.first_response_at is not None
+        assert TicketAttachment.query.filter_by(ticket_id=ticket_id).count() >= 1
+
+
+def test_client_plan_change_with_proration(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+        basic = ServicePlan(
+            name="Basic Hosting",
+            code="basic-hosting",
+            monthly_price=Decimal("30.00"),
+            daily_price=Decimal("1.00"),
+            yearly_price=Decimal("300.00"),
+            limits_json={"cpu_cores": 1, "ram_mb": 1024},
+            is_active=True,
+        )
+        pro = ServicePlan(
+            name="Pro Hosting",
+            code="pro-hosting",
+            monthly_price=Decimal("60.00"),
+            daily_price=Decimal("2.00"),
+            yearly_price=Decimal("600.00"),
+            limits_json={"cpu_cores": 2, "ram_mb": 2048},
+            is_active=True,
+        )
+        service = ClientService(
+            client=client_profile,
+            plan=basic,
+            name="Hosting WWW",
+            service_type="hosting",
+            status="active",
+            starts_on=date.today(),
+            billing_period="monthly",
+            recurring_amount=Decimal("30.00"),
+            auto_suspend=True,
+            auto_resume=True,
+        )
+        db.session.add_all([basic, pro, service])
+        db.session.commit()
+        service_id = service.id
+        pro_id = pro.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        f"/client/billing/services/{service_id}/plan-change",
+        data={
+            f"plan-{service_id}-target_plan_id": str(pro_id),
+            f"plan-{service_id}-submit": "1",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+
+    with app.app_context():
+        service = ClientService.query.get(service_id)
+        assert service is not None
+        assert service.service_plan_id == pro_id
+        client_profile = Client.query.first()
+        assert client_profile is not None
+        assert client_profile.balance.balance == Decimal("20.00")
+        tx = BillingTransaction.query.filter_by(transaction_type="plan_change_proration").first()
+        assert tx is not None
+
+
+def test_client_can_request_backup_restore(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+        backup_root = Path(app.config["BACKUP_ROOT"])
+        backup_root.mkdir(parents=True, exist_ok=True)
+        dump_path = backup_root / "db-backup.sql"
+        dump_path.write_text("-- sample", encoding="utf-8")
+        backup = Backup(
+            client=client_profile,
+            backup_type="database",
+            status="completed",
+            storage_path="db-backup.sql",
+        )
+        db.session.add(backup)
+        db.session.commit()
+        backup_id = backup.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        f"/client/backups/{backup_id}/restore",
+        data={},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+
+    with app.app_context():
+        job = BackupRestoreJob.query.order_by(BackupRestoreJob.id.desc()).first()
+        assert job is not None
+        assert job.backup_id == backup_id
+        assert job.status == "queued"
+
+
+def test_api_token_allows_api_ticket_flow(client, app):
+    with app.app_context():
+        user = User.query.filter_by(username="client").first()
+        assert user is not None
+        token, plain_token = issue_api_token(user=user, name="Test API")
+        db.session.add(token)
+        db.session.commit()
+
+    me_response = client.get(
+        "/api/v1/me",
+        headers={"Authorization": f"Bearer {plain_token}"},
+    )
+    assert me_response.status_code == 200
+    assert me_response.get_json()["username"] == "client"
+
+    create_ticket_response = client.post(
+        "/api/v1/tickets",
+        json={
+            "subject": "API: niedostepna strona",
+            "message": "Prosze sprawdzic status aplikacji.",
+            "category": "hosting",
+            "priority": "normal",
+        },
+        headers={"Authorization": f"Bearer {plain_token}"},
+    )
+    assert create_ticket_response.status_code == 201
+
+    with app.app_context():
+        token = ApiToken.query.filter_by(name="Test API").first()
+        assert token is not None
+        assert token.last_used_at is not None
+        ticket = Ticket.query.order_by(Ticket.id.desc()).first()
+        assert ticket is not None
+        assert (ticket.metadata_json or {}).get("source") == "api"
+
+
+def test_admin_can_send_webhook_test_delivery(client, app, monkeypatch):
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def getcode(self):
+            return 200
+
+        def read(self):
+            return b"ok"
+
+    monkeypatch.setattr("urllib.request.urlopen", lambda *args, **kwargs: _FakeResponse())
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    create_response = client.post(
+        "/admin/webhooks/new",
+        data={
+            "name": "Test endpoint",
+            "target_url": "https://example.test/webhooks",
+            "secret": "secret",
+            "client_id": 0,
+            "event_types": ["ticket.created"],
+            "is_active": "y",
+        },
+        follow_redirects=True,
+    )
+    assert create_response.status_code == 200
+
+    with app.app_context():
+        endpoint = WebhookEndpoint.query.filter_by(name="Test endpoint").first()
+        assert endpoint is not None
+        endpoint_id = endpoint.id
+
+    send_response = client.post(
+        f"/admin/webhooks/{endpoint_id}/send-test",
+        data={},
+        follow_redirects=True,
+    )
+    assert send_response.status_code == 200
+
+    with app.app_context():
+        delivery = WebhookDelivery.query.order_by(WebhookDelivery.id.desc()).first()
+        assert delivery is not None
+        assert delivery.endpoint_id == endpoint_id
+        assert delivery.success is True
+
+
+def test_client_monitoring_page_loads(client):
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+    response = client.get("/client/monitoring")
+    assert response.status_code == 200
+    assert "Zuzycie zasobow" in response.get_data(as_text=True)
+
+
+def test_admin_monitoring_clients_page_loads(client):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.get("/admin/monitoring/clients")
+    assert response.status_code == 200
+    assert "Monitoring klientow" in response.get_data(as_text=True)
