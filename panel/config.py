@@ -44,9 +44,21 @@ class Config:
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "200/day;50/hour")
     RATELIMIT_STORAGE_URI = os.getenv("RATELIMIT_STORAGE_URI", "memory://")
     LOGIN_RATELIMIT = os.getenv("LOGIN_RATELIMIT", "10 per 10 minutes")
+    SELF_REGISTRATION_ENABLED = os.getenv("SELF_REGISTRATION_ENABLED", "true").lower() == "true"
+    REGISTRATION_AUTO_LOGIN = os.getenv("REGISTRATION_AUTO_LOGIN", "true").lower() == "true"
     TWO_FACTOR_AVAILABLE = os.getenv("TWO_FACTOR_AVAILABLE", "false").lower() == "true"
     TWO_FACTOR_ISSUER = os.getenv("TWO_FACTOR_ISSUER", APP_NAME)
     TWO_FACTOR_LOGIN_RATELIMIT = os.getenv("TWO_FACTOR_LOGIN_RATELIMIT", "10 per 10 minutes")
+    TWO_FACTOR_EMAIL_ENABLED = os.getenv("TWO_FACTOR_EMAIL_ENABLED", "true").lower() == "true"
+    TWO_FACTOR_EMAIL_CODE_TTL_SECONDS = int(os.getenv("TWO_FACTOR_EMAIL_CODE_TTL_SECONDS", "300"))
+    TWO_FACTOR_EMAIL_SUBJECT = os.getenv("TWO_FACTOR_EMAIL_SUBJECT", "Kod logowania 2FA")
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "")
+    MAIL_PORT = int(os.getenv("MAIL_PORT", "587"))
+    MAIL_USERNAME = os.getenv("MAIL_USERNAME", "")
+    MAIL_PASSWORD = os.getenv("MAIL_PASSWORD", "")
+    MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "true").lower() == "true"
+    MAIL_USE_SSL = os.getenv("MAIL_USE_SSL", "false").lower() == "true"
+    MAIL_FROM = os.getenv("MAIL_FROM", "")
     BILLING_GRACE_DAYS = int(os.getenv("BILLING_GRACE_DAYS", "3"))
     BILLING_AUTO_RESUME = os.getenv("BILLING_AUTO_RESUME", "true").lower() == "true"
     ONLINE_PAYMENTS_ENABLED = os.getenv("ONLINE_PAYMENTS_ENABLED", "false").lower() == "true"

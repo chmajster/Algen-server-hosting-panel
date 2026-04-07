@@ -7,8 +7,9 @@ Installer został przebudowany tak, aby używał systemowego Pythona z repozytor
 ## Moduły
 
 - panel administratora i klienta
+- publiczna rejestracja klienta z wyborem planu hostingu
 - uwierzytelnianie, role, sesje, CSRF i rate limiting logowania
-- opcjonalne 2FA (TOTP) na poziomie konta uzytkownika
+- opcjonalne 2FA (Google Authenticator lub kod e-mail) na poziomie konta uzytkownika
 - billing oparty o saldo klienta i cykle rozliczeń
 - opcjonalne platnosci online (provider Stripe lub mock do testow)
 - domeny, subdomeny, bazy danych, FTP, DNS, SSL, poczta, backupy
@@ -81,13 +82,37 @@ Wymuszenie nazewnictwa kont DB:
 - każdy użytkownik DB tworzony przez klienta dostaje prefiks loginu klienta,
 - przykład: dla loginu `client1` konto DB zostanie zapisane jako `client1_nazwa`.
 
+## Rejestracja z planem
+
+Ekran logowania udostepnia rejestracje klienta (`/auth/register`).
+
+Podczas rejestracji:
+
+- klient wybiera aktywny plan hostingu,
+- zakladane jest konto klienta i przypisywana usluga typu `hosting`,
+- limity planu sa kopiowane do profilu klienta,
+- limity CPU/RAM planu sa uzywane do limitow kontenera Docker Apache klienta.
+
+Konfiguracja `.env`:
+
+```env
+SELF_REGISTRATION_ENABLED=true
+REGISTRATION_AUTO_LOGIN=true
+```
+
 ## Apache per klient (Docker)
 
 Panel obsluguje model:
 
 - jeden klient = jeden kontener Docker z Apache,
 - wszystkie domeny i subdomeny klienta sa mapowane jako VirtualHosty w tym kontenerze,
+- limity CPU/RAM kontenera sa wyliczane z planu hostingowego klienta (`limits_json` planu),
 - po kazdej zmianie domen (utworzenie, edycja, usuniecie, dodanie subdomeny) konfiguracja kontenera jest synchronizowana automatycznie.
+
+Aby ustawic limity dla planu, w panelu administratora przy edycji planu uzupelnij pola:
+
+- `CPU (vCPU)` np. `1`, `1.5`,
+- `RAM (MB)` np. `1024`, `2048`.
 
 Instalator:
 
@@ -297,10 +322,13 @@ AUTOUPDATE_INTERVAL='*:0/15'
 
 Nowe funkcje sa dostepne, ale domyslnie **wylaczone**:
 
-- 2FA (TOTP) dla logowania uzytkownika,
+- 2FA dla logowania uzytkownika (Google Authenticator albo kod e-mail),
 - doladowanie salda klienta przez platnosc online.
 
-Po wlaczeniu `TWO_FACTOR_AVAILABLE=true`, kazdy uzytkownik moze sam wlaczyc 2FA w panelu (menu `2FA`).
+Po wlaczeniu `TWO_FACTOR_AVAILABLE=true`, kazdy uzytkownik moze sam wlaczyc 2FA w panelu (menu `2FA`) i wybrac metode:
+
+- Google Authenticator (TOTP),
+- kod jednorazowy wysylany na e-mail.
 
 Po wlaczeniu `ONLINE_PAYMENTS_ENABLED=true`, klient dostaje formularz doladowania salda na stronie `Billing`.
 
@@ -310,6 +338,16 @@ Konfiguracja `.env`:
 TWO_FACTOR_AVAILABLE=false
 TWO_FACTOR_ISSUER='Hosting Panel'
 TWO_FACTOR_LOGIN_RATELIMIT='10 per 10 minutes'
+TWO_FACTOR_EMAIL_ENABLED=true
+TWO_FACTOR_EMAIL_CODE_TTL_SECONDS=300
+TWO_FACTOR_EMAIL_SUBJECT='Kod logowania 2FA'
+MAIL_SERVER=
+MAIL_PORT=587
+MAIL_USERNAME=
+MAIL_PASSWORD=
+MAIL_USE_TLS=true
+MAIL_USE_SSL=false
+MAIL_FROM='no-reply@example.com'
 
 ONLINE_PAYMENTS_ENABLED=false
 ONLINE_PAYMENTS_PROVIDER=stripe
@@ -327,6 +365,7 @@ STRIPE_WEBHOOK_TOLERANCE_SECONDS=300
 
 Uwagi:
 
+- dla 2FA e-mail wymagane jest skonfigurowanie SMTP (`MAIL_SERVER`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`),
 - provider `mock` pozwala przetestowac przeplyw checkout bez zewnetrznej bramki,
 - webhook Stripe jest obslugiwany pod adresem `POST /webhooks/stripe`,
 - przy Stripe rekomendowane jest ustawienie poprawnego HTTPS i `STRIPE_WEBHOOK_SECRET`.

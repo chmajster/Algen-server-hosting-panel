@@ -1,0 +1,46 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-md-9 col-lg-7 col-xl-6">
+    <div class="surface-card p-4 p-lg-5">
+      <h1 class="h3 mb-2">Rejestracja</h1>
+      <p class="text-secondary mb-4">Utworz konto klienta i wybierz plan hostingu.</p>
+      <form method="post" class="row g-3">
+        {{ form.hidden_tag() }}
+        <div class="col-12 col-md-6">
+          {{ form.first_name.label(class="form-label") }}
+          {{ form.first_name(class="form-control", placeholder="Imie") }}
+        </div>
+        <div class="col-12 col-md-6">
+          {{ form.last_name.label(class="form-label") }}
+          {{ form.last_name(class="form-control", placeholder="Nazwisko") }}
+        </div>
+        <div class="col-12 col-md-6">
+          {{ form.username.label(class="form-label") }}
+          {{ form.username(class="form-control", placeholder="Twoj login") }}
+        </div>
+        <div class="col-12 col-md-6">
+          {{ form.email.label(class="form-label") }}
+          {{ form.email(class="form-control", placeholder="twoj@email.com") }}
+        </div>
+        <div class="col-12">
+          {{ form.plan_id.label(class="form-label") }}
+          {{ form.plan_id(class="form-select") }}
+        </div>
+        <div class="col-12 col-md-6">
+          {{ form.password.label(class="form-label") }}
+          {{ form.password(class="form-control", placeholder="Haslo") }}
+        </div>
+        <div class="col-12 col-md-6">
+          {{ form.password_confirm.label(class="form-label") }}
+          {{ form.password_confirm(class="form-control", placeholder="Powtorz haslo") }}
+        </div>
+        <div class="col-12 d-grid gap-2">
+          <button class="btn btn-primary">{{ form.submit.label.text }}</button>
+          <a class="btn btn-outline-secondary" href="{{ url_for('auth.login') }}">Mam juz konto</a>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

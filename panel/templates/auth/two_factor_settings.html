@@ -12,29 +12,56 @@
 
       {% if not current_user.two_factor_enabled %}
       <p class="text-secondary">
-        2FA jest opcjonalne i domyslnie wylaczone. Po wlaczeniu logowanie wymaga hasla oraz kodu z aplikacji typu Authenticator.
+        2FA jest opcjonalne i domyslnie wylaczone. Po wlaczeniu logowanie wymaga hasla oraz kodu z wybranej metody.
       </p>
 
-      <div class="alert alert-info">
-        <div class="fw-semibold mb-2">Krok 1: Dodaj konto do aplikacji</div>
-        <div class="small mb-2">Skopiuj sekret do aplikacji lub zeskanuj URI otpauth:</div>
-        <div class="small mb-2"><strong>Sekret:</strong> {{ setup_secret_display }}</div>
-        <div class="small text-break"><strong>URI:</strong> {{ setup_uri }}</div>
+      <div class="surface-card border p-3 mb-4">
+        <h5 class="mb-3">Google Authenticator</h5>
+        <div class="alert alert-info">
+          <div class="fw-semibold mb-2">Krok 1: Dodaj konto do aplikacji</div>
+          <div class="small mb-2">Skopiuj sekret do aplikacji lub zeskanuj URI otpauth:</div>
+          <div class="small mb-2"><strong>Sekret:</strong> {{ setup_secret_display }}</div>
+          <div class="small text-break"><strong>URI:</strong> {{ setup_uri }}</div>
+        </div>
+
+        <form method="post" class="row g-3">
+          {{ enable_totp_form.hidden_tag() }}
+          <div class="col-12 col-md-6">
+            {{ enable_totp_form.code.label(class="form-label") }}
+            {{ enable_totp_form.code(class="form-control", placeholder="123456", inputmode="numeric", autocomplete="one-time-code") }}
+          </div>
+          <div class="col-12">
+            {{ enable_totp_form.submit(class="btn btn-primary") }}
+          </div>
+        </form>
       </div>
 
-      <form method="post" class="row g-3">
-        {{ enable_form.hidden_tag() }}
-        <div class="col-12 col-md-6">
-          {{ enable_form.code.label(class="form-label") }}
-          {{ enable_form.code(class="form-control", placeholder="123456", inputmode="numeric", autocomplete="one-time-code") }}
-        </div>
-        <div class="col-12">
-          {{ enable_form.submit(class="btn btn-primary") }}
-        </div>
-      </form>
+      {% if email_method_available %}
+      <div class="surface-card border p-3">
+        <h5 class="mb-3">2FA przez e-mail</h5>
+        <p class="text-secondary mb-3">
+          Przy kazdym logowaniu otrzymasz kod na adres {{ email_address_masked or current_user.email }}.
+        </p>
+        <form method="post" class="row g-3">
+          {{ enable_email_form.hidden_tag() }}
+          <div class="col-12 col-md-6">
+            {{ enable_email_form.password.label(class="form-label") }}
+            {{ enable_email_form.password(class="form-control", autocomplete="current-password") }}
+          </div>
+          <div class="col-12">
+            {{ enable_email_form.submit(class="btn btn-outline-primary") }}
+          </div>
+        </form>
+      </div>
+      {% else %}
+      <div class="alert alert-warning mb-0">
+        2FA przez e-mail jest obecnie wylaczone przez administratora.
+      </div>
+      {% endif %}
       {% else %}
       <p class="text-secondary">
-        2FA jest aktywne na tym koncie. Aby je wylaczyc, podaj aktualne haslo i jednorazowy kod 2FA.
+        Aktywna metoda: <strong>{% if current_method == 'email' %}e-mail{% else %}Google Authenticator{% endif %}</strong>.
+        Aby wylaczyc 2FA, potwierdz haslo{% if current_method == 'totp' %} i kod z aplikacji{% endif %}.
       </p>
 
       <form method="post" class="row g-3">
@@ -43,10 +70,12 @@
           {{ disable_form.password.label(class="form-label") }}
           {{ disable_form.password(class="form-control", autocomplete="current-password") }}
         </div>
+        {% if current_method == 'totp' %}
         <div class="col-12 col-md-6">
           {{ disable_form.code.label(class="form-label") }}
           {{ disable_form.code(class="form-control", placeholder="123456", inputmode="numeric", autocomplete="one-time-code") }}
         </div>
+        {% endif %}
         <div class="col-12">
           {{ disable_form.submit(class="btn btn-outline-danger") }}
         </div>
@@ -61,7 +90,7 @@
       <ul class="mb-0">
         <li>Chroni konto nawet po wycieku hasla.</li>
         <li>Utrudnia brute force i przejecie sesji.</li>
-        <li>Dziala z popularnymi aplikacjami TOTP.</li>
+        <li>Dziala przez Google Authenticator lub kod e-mail.</li>
       </ul>
     </div>
   </div>

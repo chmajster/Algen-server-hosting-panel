@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 import subprocess
+from decimal import Decimal, InvalidOperation
 from pathlib import Path, PurePosixPath
 
 from panel.models import Client
@@ -64,6 +65,91 @@ def _apache_config_root(client: Client) -> Path:
     root = client_home_root(client) / "docker" / "apache"
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _normalize_cpu_limit(value) -> str | None:
+    if value is None:
+        return None
+    raw = str(value).strip().replace(",", ".")
+    if not raw:
+        return None
+    try:
+        parsed = Decimal(raw)
+    except (InvalidOperation, ValueError):
+        return None
+    if parsed <= 0:
+        return None
+    normalized = parsed.normalize()
+    return format(normalized, "f")
+
+
+def _normalize_ram_limit_mb(value) -> int | None:
+    if value is None:
+        return None
+    raw = str(value).strip().lower()
+    if not raw:
+        return None
+    if raw.endswith("gb"):
+        raw = raw[:-2].strip()
+        multiplier = 1024
+    elif raw.endswith("g"):
+        raw = raw[:-1].strip()
+        multiplier = 1024
+    elif raw.endswith("mb"):
+        raw = raw[:-2].strip()
+        multiplier = 1
+    elif raw.endswith("m"):
+        raw = raw[:-1].strip()
+        multiplier = 1
+    else:
+        multiplier = 1
+    try:
+        parsed = int(Decimal(raw))
+    except (InvalidOperation, ValueError):
+        return None
+    parsed *= multiplier
+    if parsed <= 0:
+        return None
+    return parsed
+
+
+def _resolve_limit_source(client: Client) -> dict:
+    limits = dict(client.resource_limits or {})
+    hosting_services = [
+        service
+        for service in client.services
+        if service.service_type == "hosting" and service.status != "deleted" and service.plan is not None
+    ]
+    if hosting_services:
+        # Prefer the newest non-deleted hosting service plan limits.
+        hosting_services.sort(key=lambda item: item.created_at, reverse=True)
+        limits.update(dict(hosting_services[0].plan.limits_json or {}))
+    return limits
+
+
+def client_apache_resource_limits(client: Client) -> dict[str, str]:
+    limits = _resolve_limit_source(client)
+    cpu_limit = _normalize_cpu_limit(
+        limits.get("cpu_cores") or limits.get("cpus") or limits.get("cpu")
+    )
+    ram_limit_mb = _normalize_ram_limit_mb(
+        limits.get("ram_mb") or limits.get("memory_mb") or limits.get("memory")
+    )
+    docker_limits: dict[str, str] = {}
+    if cpu_limit is not None:
+        docker_limits["cpus"] = cpu_limit
+    if ram_limit_mb is not None:
+        docker_limits["memory"] = f"{ram_limit_mb}m"
+    return docker_limits
+
+
+def _docker_limit_args(limits: dict[str, str]) -> list[str]:
+    args: list[str] = []
+    if limits.get("cpus"):
+        args.extend(["--cpus", limits["cpus"]])
+    if limits.get("memory"):
+        args.extend(["--memory", limits["memory"]])
+    return args
 
 
 def _host_path_to_container_docroot(client: Client, host_docroot: Path) -> str:
@@ -186,6 +272,8 @@ def _ensure_container(name: str, client: Client, vhost_file: Path) -> None:
     bind_address = current_app.config.get("CLIENT_APACHE_BIND_ADDRESS", "127.0.0.1")
     image = current_app.config.get("CLIENT_APACHE_IMAGE", "httpd:2.4")
     http_port = client_apache_http_port(client)
+    docker_limits = client_apache_resource_limits(client)
+    docker_limit_args = _docker_limit_args(docker_limits)
 
     domain_mount = _domain_mount_root(client)
     domain_mount.mkdir(parents=True, exist_ok=True)
@@ -205,6 +293,7 @@ def _ensure_container(name: str, client: Client, vhost_file: Path) -> None:
                 f"{domain_mount}:/var/www/domains:rw",
                 "-v",
                 f"{vhost_file}:/usr/local/apache2/conf/extra/httpd-vhosts.conf:ro",
+                *docker_limit_args,
                 image,
                 "httpd-foreground",
                 "-C",
@@ -212,6 +301,8 @@ def _ensure_container(name: str, client: Client, vhost_file: Path) -> None:
             ]
         )
     else:
+        if docker_limit_args:
+            _run_docker(["update", *docker_limit_args, name])
         _run_docker(["start", name], check=False)
 
     graceful_reload = _run_docker(["exec", name, "httpd", "-k", "graceful"], check=False)
@@ -260,6 +351,7 @@ def sync_client_apache_instance(client: Client, *, reason: str, actor=None) -> d
         "container": container_name,
         "status": "running",
         "vhosts": len(virtual_hosts),
+        "docker_limits": client_apache_resource_limits(client),
         "reason": reason,
     }
     log_activity(

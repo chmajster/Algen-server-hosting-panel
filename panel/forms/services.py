@@ -49,6 +49,8 @@ class ServicePlanForm(FlaskForm):
     monthly_price = StringField("Cena miesieczna", validators=[DataRequired(), Length(max=32)])
     daily_price = StringField("Cena dzienna", validators=[Optional(), Length(max=32)])
     yearly_price = StringField("Cena roczna", validators=[Optional(), Length(max=32)])
+    cpu_cores = StringField("CPU (vCPU)", validators=[Optional(), Length(max=16)])
+    ram_mb = StringField("RAM (MB)", validators=[Optional(), Length(max=16)])
     description = TextAreaField("Opis", validators=[Optional(), Length(max=2000)])
     submit = SubmitField("Zapisz")
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -7,17 +8,20 @@ from panel.extensions import db
 from panel.models import (
     BillingTransaction,
     Client,
+    ClientService,
     DatabaseUser,
     Domain,
     HostingDatabase,
     Mailbox,
     OnlinePayment,
     SSLCertificate,
+    ServicePlan,
     Subdomain,
     SystemSetting,
     User,
 )
 from panel.seed import seed_defaults
+from panel.services.client_apache import client_apache_resource_limits
 from panel.services.billing import adjust_balance
 from panel.services.two_factor import current_totp, generate_two_factor_secret
 
@@ -30,6 +34,87 @@ def test_login_success(client):
     )
     assert response.status_code == 200
     assert "Ostatnie logi operacji" in response.get_data(as_text=True)
+
+
+def test_public_registration_creates_client_with_selected_plan(client, app):
+    with app.app_context():
+        plan = ServicePlan(
+            name="Pro Register",
+            code="pro-register",
+            description="Plan rejestracyjny",
+            monthly_price=Decimal("99.00"),
+            daily_price=Decimal("4.00"),
+            yearly_price=Decimal("990.00"),
+            limits_json={"cpu_cores": 1.5, "ram_mb": 1536},
+            is_active=True,
+        )
+        db.session.add(plan)
+        db.session.commit()
+        plan_id = plan.id
+
+    response = client.post(
+        "/auth/register",
+        data={
+            "first_name": "Anna",
+            "last_name": "Nowak",
+            "username": "anna_register",
+            "email": "anna@example.test",
+            "password": "StrongPass1!",
+            "password_confirm": "StrongPass1!",
+            "plan_id": plan_id,
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert "/client" in response.headers.get("Location", "")
+
+    with app.app_context():
+        user = User.query.filter_by(username="anna_register").first()
+        assert user is not None
+        assert user.client_profile is not None
+        client_profile = user.client_profile
+        assert client_profile.resource_limits.get("selected_plan_id") == plan_id
+        assert Decimal(str(client_profile.balance.balance)) == Decimal("0.00")
+        hosting_service = (
+            ClientService.query.filter_by(client_id=client_profile.id, service_type="hosting")
+            .order_by(ClientService.created_at.desc())
+            .first()
+        )
+        assert hosting_service is not None
+        assert hosting_service.service_plan_id == plan_id
+
+
+def test_client_apache_resource_limits_follow_selected_plan(app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+        plan = ServicePlan(
+            name="Resource Plan",
+            code="resource-plan",
+            monthly_price=Decimal("59.00"),
+            daily_price=Decimal("2.00"),
+            yearly_price=Decimal("590.00"),
+            limits_json={"cpu_cores": 2, "ram_mb": 2048},
+            is_active=True,
+        )
+        service = ClientService(
+            client=client_profile,
+            plan=plan,
+            name="Hosting Resource",
+            service_type="hosting",
+            status="active",
+            starts_on=date.today(),
+            billing_period="monthly",
+            recurring_amount=Decimal("59.00"),
+            auto_suspend=True,
+            auto_resume=True,
+        )
+        db.session.add_all([plan, service])
+        db.session.commit()
+
+        limits = client_apache_resource_limits(client_profile)
+        assert limits["cpus"] == "2"
+        assert limits["memory"] == "2048m"
 
 
 def test_login_accepts_short_password_input_without_form_validation_error(client):
@@ -59,6 +144,7 @@ def test_login_requires_2fa_for_user_with_enabled_2fa(client, app):
         assert user is not None
         secret = generate_two_factor_secret()
         user.two_factor_enabled = True
+        user.two_factor_method = "totp"
         user.two_factor_secret = secret
         db.session.commit()
 
@@ -84,6 +170,7 @@ def test_login_rejects_invalid_2fa_code(client, app):
         user = User.query.filter_by(username="admin").first()
         assert user is not None
         user.two_factor_enabled = True
+        user.two_factor_method = "totp"
         user.two_factor_secret = generate_two_factor_secret()
         db.session.commit()
 
@@ -118,8 +205,8 @@ def test_user_can_enable_and_disable_2fa_in_settings(client, app):
     enable_response = client.post(
         "/auth/2fa/settings",
         data={
-            "enable-code": current_totp(setup_secret),
-            "enable-submit": "1",
+            "totp-code": current_totp(setup_secret),
+            "totp-submit": "1",
         },
         follow_redirects=True,
     )
@@ -130,6 +217,7 @@ def test_user_can_enable_and_disable_2fa_in_settings(client, app):
         user = User.query.filter_by(username="client").first()
         assert user is not None
         assert user.two_factor_enabled is True
+        assert user.two_factor_method == "totp"
         user_secret = user.two_factor_secret
 
     disable_response = client.post(
@@ -148,6 +236,61 @@ def test_user_can_enable_and_disable_2fa_in_settings(client, app):
         user = User.query.filter_by(username="client").first()
         assert user is not None
         assert user.two_factor_enabled is False
+        assert user.two_factor_secret is None
+
+
+def test_login_supports_email_2fa(client, app):
+    with app.app_context():
+        user = User.query.filter_by(username="admin").first()
+        assert user is not None
+        user.two_factor_enabled = True
+        user.two_factor_method = "email"
+        user.two_factor_secret = None
+        db.session.commit()
+
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=False,
+    )
+    assert login_response.status_code == 302
+    assert login_response.headers.get("Location", "").startswith("/auth/2fa")
+
+    with client.session_transaction() as session_data:
+        email_code = session_data.get("pending_2fa_email_code_test")
+    assert email_code
+
+    verify_response = client.post(
+        "/auth/2fa",
+        data={"code": email_code},
+        follow_redirects=False,
+    )
+    assert verify_response.status_code == 302
+    assert verify_response.headers.get("Location", "").startswith("/admin/")
+
+
+def test_user_can_enable_email_2fa_in_settings(client, app):
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        "/auth/2fa/settings",
+        data={
+            "email-password": "Client123!",
+            "email-submit": "1",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "przez e-mail zostalo wlaczone" in response.get_data(as_text=True)
+
+    with app.app_context():
+        user = User.query.filter_by(username="client").first()
+        assert user is not None
+        assert user.two_factor_enabled is True
+        assert user.two_factor_method == "email"
         assert user.two_factor_secret is None
 
 

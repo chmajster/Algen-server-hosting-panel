@@ -104,12 +104,42 @@ def _service_plan_form_to_model(form: ServicePlanForm, plan: ServicePlan) -> Ser
     def parse(value: str) -> Decimal:
         return Decimal((value or "0").replace(",", "."))
 
+    def parse_cpu(value: str) -> float | None:
+        raw = (value or "").strip()
+        if not raw:
+            return None
+        parsed = Decimal(raw.replace(",", "."))
+        if parsed <= 0:
+            raise InvalidOperation("CPU must be positive")
+        return float(parsed)
+
+    def parse_ram(value: str) -> int | None:
+        raw = (value or "").strip()
+        if not raw:
+            return None
+        parsed = int(raw)
+        if parsed <= 0:
+            raise ValueError("RAM must be positive")
+        return parsed
+
     plan.name = form.name.data
     plan.code = form.code.data
     plan.description = form.description.data
     plan.monthly_price = parse(form.monthly_price.data)
     plan.daily_price = parse(form.daily_price.data or "0")
     plan.yearly_price = parse(form.yearly_price.data or "0")
+    limits = dict(plan.limits_json or {})
+    cpu_value = parse_cpu(form.cpu_cores.data)
+    ram_value = parse_ram(form.ram_mb.data)
+    if cpu_value is None:
+        limits.pop("cpu_cores", None)
+    else:
+        limits["cpu_cores"] = cpu_value
+    if ram_value is None:
+        limits.pop("ram_mb", None)
+    else:
+        limits["ram_mb"] = ram_value
+    plan.limits_json = limits
     return plan
 
 
@@ -128,7 +158,7 @@ def admin_plan_create():
     if form.validate_on_submit():
         try:
             plan = _service_plan_form_to_model(form, ServicePlan())
-        except InvalidOperation:
+        except (InvalidOperation, ValueError):
             flash("Nieprawidłowy format kwoty.", "danger")
             return render_template("billing/admin_plan_form.html", form=form, title="Nowy plan")
         db.session.add(plan)
@@ -145,10 +175,14 @@ def admin_plan_create():
 def admin_plan_edit(plan_id: int):
     plan = ServicePlan.query.get_or_404(plan_id)
     form = ServicePlanForm(obj=plan)
+    if request.method == "GET":
+        limits = dict(plan.limits_json or {})
+        form.cpu_cores.data = str(limits.get("cpu_cores", ""))
+        form.ram_mb.data = str(limits.get("ram_mb", ""))
     if form.validate_on_submit():
         try:
             _service_plan_form_to_model(form, plan)
-        except InvalidOperation:
+        except (InvalidOperation, ValueError):
             flash("Nieprawidłowy format kwoty.", "danger")
             return render_template("billing/admin_plan_form.html", form=form, title=f"Edycja {plan.name}")
         log_activity("billing.plan_edit", "service_plan", f"Zaktualizowano plan {plan.name}", entity_id=plan.id)

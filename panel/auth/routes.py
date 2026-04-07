@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hmac
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from urllib.parse import urlsplit
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, session, url_for
@@ -11,13 +11,15 @@ from sqlalchemy import or_
 from panel.extensions import db, get_client_ip, limiter
 from panel.forms.auth import (
     LoginForm,
+    RegisterForm,
     TwoFactorChallengeForm,
     TwoFactorDisableForm,
     TwoFactorEnableEmailForm,
     TwoFactorEnableTotpForm,
 )
-from panel.models import User
+from panel.models import Client, ClientBalance, ClientService, PaymentSetting, Role, ServicePlan, User
 from panel.services.audit import log_activity
+from panel.services.billing import schedule_initial_cycle
 from panel.services.mailer import send_plain_email
 from panel.services.two_factor import (
     build_email_code_hash,
@@ -47,6 +49,21 @@ def _safe_next_url(value: str | None) -> str | None:
 
 def _two_factor_available() -> bool:
     return bool(current_app.config.get("TWO_FACTOR_AVAILABLE", False))
+
+
+def _registration_available() -> bool:
+    return bool(current_app.config.get("SELF_REGISTRATION_ENABLED", True))
+
+
+def _active_plan_choices() -> list[tuple[int, str]]:
+    plans = ServicePlan.query.filter_by(is_active=True).order_by(ServicePlan.monthly_price.asc(), ServicePlan.name.asc()).all()
+    return [
+        (
+            plan.id,
+            f"{plan.name} ({plan.monthly_price} PLN/mies.)",
+        )
+        for plan in plans
+    ]
 
 
 def _two_factor_email_enabled() -> bool:
@@ -172,6 +189,103 @@ def _complete_login(
     return _post_login_redirect(user, next_url)
 
 
+@auth_bp.route("/register", methods=["GET", "POST"])
+def register():
+    if not _registration_available():
+        abort(404)
+    if current_user.is_authenticated:
+        return redirect(url_for("admin.dashboard" if current_user.has_role("administrator") else "client.dashboard"))
+
+    form = RegisterForm()
+    form.plan_id.choices = _active_plan_choices()
+    if not form.plan_id.choices:
+        flash("Brak aktywnych planow do rejestracji. Skontaktuj sie z administratorem.", "warning")
+        return redirect(url_for("auth.login"))
+
+    if form.validate_on_submit():
+        username = (form.username.data or "").strip()
+        email = (form.email.data or "").strip().lower()
+        if User.query.filter(User.username == username).first() is not None:
+            flash("Podany login jest juz zajety.", "danger")
+            return render_template("auth/register.html", form=form, title="Rejestracja")
+        if User.query.filter(User.email == email).first() is not None:
+            flash("Podany adres e-mail jest juz zajety.", "danger")
+            return render_template("auth/register.html", form=form, title="Rejestracja")
+
+        plan = ServicePlan.query.filter_by(id=form.plan_id.data, is_active=True).first()
+        if plan is None:
+            flash("Wybrany plan jest niedostepny.", "danger")
+            return render_template("auth/register.html", form=form, title="Rejestracja")
+
+        client_role = Role.query.filter_by(name="client").first()
+        if client_role is None:
+            client_role = Role(name="client", description="Klient")
+            db.session.add(client_role)
+            db.session.flush()
+
+        plan_limits = dict(plan.limits_json or {})
+        user = User(
+            role=client_role,
+            username=username,
+            email=email,
+            first_name=(form.first_name.data or "").strip(),
+            last_name=(form.last_name.data or "").strip(),
+            status="active",
+        )
+        user.set_password(form.password.data)
+
+        client = Client(
+            user=user,
+            company_name=None,
+            resource_limits={
+                **plan_limits,
+                "selected_plan_id": plan.id,
+                "selected_plan_code": plan.code,
+            },
+        )
+        client.balance = ClientBalance(balance=0, currency="PLN")
+
+        service = ClientService(
+            client=client,
+            service_plan_id=plan.id,
+            name=f"Hosting {plan.name}",
+            service_type="hosting",
+            status="active",
+            starts_on=date.today(),
+            billing_period="monthly",
+            recurring_amount=plan.monthly_price,
+            auto_suspend=True,
+            auto_resume=True,
+            metadata_json={"source": "self_registration", "plan_code": plan.code},
+        )
+
+        db.session.add(user)
+        db.session.add(client)
+        db.session.add(service)
+        db.session.add(PaymentSetting(client=client, grace_days=3, auto_resume=True))
+        db.session.flush()
+        schedule_initial_cycle(service)
+
+        log_activity(
+            "auth.register",
+            "user",
+            f"Rejestracja nowego konta klienta {user.username} z planem {plan.code}",
+            entity_id=user.id,
+            actor=user,
+            client=client,
+            metadata={"plan_id": plan.id, "plan_code": plan.code},
+        )
+        db.session.commit()
+
+        flash("Konto zostalo utworzone.", "success")
+        if current_app.config.get("REGISTRATION_AUTO_LOGIN", True):
+            login_user(user)
+            return redirect(url_for("client.dashboard"))
+        return redirect(url_for("auth.login"))
+
+    return render_template("auth/register.html", form=form, title="Rejestracja")
+
+
 @auth_bp.route("/login", methods=["GET", "POST"])
 @limiter.limit(
     lambda: current_app.config.get("LOGIN_RATELIMIT", "10 per 10 minutes"),
@@ -280,14 +394,35 @@ def login_2fa():
         return redirect(url_for("auth.login"))
 
     user = User.query.get(pending_user_id)
-    if user is None or not user.two_factor_enabled or not user.two_factor_secret:
+    if user is None:
+        method = "totp"
+    else:
+        method = (session.get("pending_2fa_method") or _effective_two_factor_method(user)).strip().lower()
+    if method not in {"totp", "email"}:
+        method = "totp"
+
+    if user is None or not user.two_factor_enabled:
         _clear_pending_login_state()
         flash("Sesja logowania wygasla. Zaloguj sie ponownie.", "warning")
+        return redirect(url_for("auth.login"))
+    if method == "totp" and not user.two_factor_secret:
+        _clear_pending_login_state()
+        flash("2FA Google Authenticator jest niekompletne dla tego konta.", "warning")
+        return redirect(url_for("auth.login"))
+    if method == "email" and not _two_factor_email_enabled():
+        _clear_pending_login_state()
+        flash("2FA przez e-mail jest obecnie wylaczone.", "warning")
         return redirect(url_for("auth.login"))
 
     form = TwoFactorChallengeForm()
     if form.validate_on_submit():
-        if verify_totp_code(user.two_factor_secret, form.code.data):
+        if method == "email":
+            is_valid, error_message = _verify_pending_email_code(user, form.code.data)
+        else:
+            is_valid = verify_totp_code(user.two_factor_secret, form.code.data)
+            error_message = None if is_valid else "Nieprawidlowy kod 2FA."
+
+        if is_valid:
             remember = bool(session.get("pending_2fa_remember", False))
             next_url = _safe_next_url(session.get("pending_2fa_next"))
             _clear_pending_login_state()
@@ -300,7 +435,7 @@ def login_2fa():
                 )
             )
 
-        flash("Nieprawidlowy kod 2FA.", "danger")
+        flash(error_message or "Nieprawidlowy kod 2FA.", "danger")
         log_activity(
             "auth.login_2fa_failed",
             "user",
@@ -311,7 +446,12 @@ def login_2fa():
         )
         db.session.commit()
 
-    return render_template("auth/login_2fa.html", form=form)
+    return render_template(
+        "auth/login_2fa.html",
+        form=form,
+        challenge_method=method,
+        challenge_target=_mask_email(user.email) if method == "email" else None,
+    )
 
 
 @auth_bp.route("/2fa/cancel")
@@ -326,8 +466,10 @@ def two_factor_settings():
     if not _two_factor_available():
         abort(404)
 
-    enable_form = TwoFactorEnableForm(prefix="enable")
+    enable_totp_form = TwoFactorEnableTotpForm(prefix="totp")
+    enable_email_form = TwoFactorEnableEmailForm(prefix="email")
     disable_form = TwoFactorDisableForm(prefix="disable")
+    email_method_available = _two_factor_email_enabled()
 
     setup_secret = session.get("two_factor_setup_secret")
     if current_user.two_factor_enabled:
@@ -337,8 +479,8 @@ def two_factor_settings():
         setup_secret = generate_two_factor_secret()
         session["two_factor_setup_secret"] = setup_secret
 
-    if request.method == "POST" and enable_form.submit.data:
-        if not enable_form.validate_on_submit():
+    if request.method == "POST" and enable_totp_form.submit.data:
+        if not enable_totp_form.validate_on_submit():
             pass
         elif current_user.two_factor_enabled:
             flash("2FA jest juz wlaczone.", "info")
@@ -346,35 +488,68 @@ def two_factor_settings():
         elif not setup_secret:
             flash("Brak sekretu konfiguracji 2FA. Odswiez strone i sproboj ponownie.", "warning")
             return redirect(url_for("auth.two_factor_settings"))
-        elif verify_totp_code(setup_secret, enable_form.code.data):
+        elif verify_totp_code(setup_secret, enable_totp_form.code.data):
             current_user.two_factor_enabled = True
+            current_user.two_factor_method = "totp"
             current_user.two_factor_secret = setup_secret
             session.pop("two_factor_setup_secret", None)
             log_activity(
                 "auth.two_factor_enabled",
                 "user",
-                "Wlaczono 2FA dla konta",
+                "Wlaczono 2FA Google Authenticator dla konta",
                 entity_id=current_user.id,
                 actor=current_user,
             )
             db.session.commit()
-            flash("Uwierzytelnianie dwuetapowe zostalo wlaczone.", "success")
+            flash("Uwierzytelnianie dwuetapowe Google Authenticator zostalo wlaczone.", "success")
             return redirect(url_for("auth.two_factor_settings"))
         else:
             flash("Nieprawidlowy kod 2FA. Wpisz aktualny kod z aplikacji.", "danger")
 
+    if request.method == "POST" and enable_email_form.submit.data:
+        if not enable_email_form.validate_on_submit():
+            pass
+        elif not email_method_available:
+            flash("2FA przez e-mail jest obecnie wylaczone przez administratora.", "warning")
+            return redirect(url_for("auth.two_factor_settings"))
+        elif current_user.two_factor_enabled:
+            flash("2FA jest juz wlaczone.", "info")
+            return redirect(url_for("auth.two_factor_settings"))
+        elif not current_user.email:
+            flash("Konto nie ma ustawionego adresu e-mail.", "danger")
+        elif not current_user.check_password(enable_email_form.password.data):
+            flash("Nieprawidlowe haslo.", "danger")
+        else:
+            current_user.two_factor_enabled = True
+            current_user.two_factor_method = "email"
+            current_user.two_factor_secret = None
+            session.pop("two_factor_setup_secret", None)
+            log_activity(
+                "auth.two_factor_enabled",
+                "user",
+                "Wlaczono 2FA e-mail dla konta",
+                entity_id=current_user.id,
+                actor=current_user,
+            )
+            db.session.commit()
+            flash("Uwierzytelnianie dwuetapowe przez e-mail zostalo wlaczone.", "success")
+            return redirect(url_for("auth.two_factor_settings"))
+
     if request.method == "POST" and disable_form.submit.data:
         if not disable_form.validate_on_submit():
             pass
-        elif not current_user.two_factor_enabled or not current_user.two_factor_secret:
+        elif not current_user.two_factor_enabled:
             flash("2FA jest juz wylaczone.", "info")
             return redirect(url_for("auth.two_factor_settings"))
         elif not current_user.check_password(disable_form.password.data):
             flash("Nieprawidlowe haslo.", "danger")
-        elif not verify_totp_code(current_user.two_factor_secret, disable_form.code.data):
+        elif _effective_two_factor_method(current_user) == "totp" and (
+            not disable_form.code.data or not verify_totp_code(current_user.two_factor_secret or "", disable_form.code.data)
+        ):
             flash("Nieprawidlowy kod 2FA.", "danger")
         else:
             current_user.two_factor_enabled = False
+            current_user.two_factor_method = "totp"
             current_user.two_factor_secret = None
             log_activity(
                 "auth.two_factor_disabled",
@@ -395,12 +570,18 @@ def two_factor_settings():
         setup_uri = build_totp_uri(secret=setup_secret, username=username, issuer=issuer)
         setup_secret_display = format_secret_for_display(setup_secret)
 
+    current_method = _effective_two_factor_method(current_user)
+
     return render_template(
         "auth/two_factor_settings.html",
-        enable_form=enable_form,
+        enable_totp_form=enable_totp_form,
+        enable_email_form=enable_email_form,
         disable_form=disable_form,
         setup_uri=setup_uri,
         setup_secret_display=setup_secret_display,
+        current_method=current_method,
+        email_method_available=email_method_available,
+        email_address_masked=_mask_email(current_user.email or "") if current_user.email else None,
         title="Ustawienia 2FA",
     )
 
