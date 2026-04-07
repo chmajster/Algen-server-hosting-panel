@@ -89,6 +89,25 @@ def _chain_payload(
     }
 
 
+def _event_category_for_action(action: str) -> str:
+    value = (action or "").strip().lower()
+    if value.startswith(("auth.", "approvals.", "api_tokens.", "ssh.", "governance.secret")):
+        return "security"
+    if value.startswith(("backup.", "backups.")):
+        return "backups"
+    if value.startswith(("webhook.", "webhooks.")):
+        return "webhooks"
+    if value.startswith("billing."):
+        return "billing"
+    if value.startswith(("tickets.", "ticket.")):
+        return "tickets"
+    if value.startswith("automation."):
+        return "automation"
+    if value.startswith(("governance.", "compliance.")):
+        return "compliance"
+    return "system"
+
+
 def log_activity(
     action: str,
     entity_type: str,
@@ -156,6 +175,29 @@ def log_activity(
         chain_legacy=chain_legacy,
     )
     db.session.add(log)
+
+    try:
+        from panel.services.event_stream import emit_event
+
+        emit_event(
+            event_type=f"activity.{action}",
+            message=description,
+            category=_event_category_for_action(action),
+            severity="info" if success else "warning",
+            source="audit",
+            client=client,
+            actor=actor_obj,
+            payload={
+                "activity_id": log.id,
+                "action": action,
+                "entity_type": entity_type,
+                "entity_id": str(entity_id) if entity_id is not None else None,
+                "success": bool(success),
+            },
+        )
+    except Exception:
+        # Event-stream emission must not block audit persistence.
+        pass
 
 
 def verify_activity_chain(*, max_errors: int = 100) -> dict[str, Any]:

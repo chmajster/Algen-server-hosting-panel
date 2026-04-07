@@ -41,6 +41,42 @@
       </div>
     </div>
   </div>
+  <div class="col-12 col-lg-6">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Eksport compliance</h2>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='compliance', format='csv') }}">CSV</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='compliance', format='xlsx') }}">XLSX</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Eksport compliance controls</h2>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='compliance_controls', format='csv') }}">CSV</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='compliance_controls', format='xlsx') }}">XLSX</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Eksport event stream</h2>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='events', format='csv') }}">CSV</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='events', format='xlsx') }}">XLSX</a>
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Eksport DR readiness</h2>
+      <div class="d-flex gap-2 flex-wrap">
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='dr_readiness', format='csv') }}">CSV</a>
+        <a class="btn btn-outline-primary" href="{{ url_for('admin.export_dataset', dataset_key='dr_readiness', format='xlsx') }}">XLSX</a>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div class="surface-card p-3">

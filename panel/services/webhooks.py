@@ -177,6 +177,33 @@ def _deliver(endpoint: WebhookEndpoint, event_type: str, body: str, payload: dic
         else:
             _schedule_retry(delivery)
 
+    try:
+        from panel.services.event_stream import emit_event
+
+        emit_event(
+            event_type="webhook.delivery",
+            message=(
+                f"Webhook {event_type} -> endpoint #{endpoint.id}: "
+                f"{'success' if delivery.success else 'failure'}"
+            ),
+            category="webhooks",
+            severity="info" if delivery.success else ("error" if delivery.dead_lettered else "warning"),
+            source="webhook",
+            client=endpoint.client,
+            payload={
+                "delivery_id": delivery.id,
+                "endpoint_id": endpoint.id,
+                "event_type": event_type,
+                "success": delivery.success,
+                "status_code": delivery.status_code,
+                "attempt_count": delivery.attempt_count,
+                "dead_lettered": delivery.dead_lettered,
+            },
+            fingerprint=delivery.idempotency_key,
+        )
+    except Exception:
+        pass
+
     return delivery
 
 

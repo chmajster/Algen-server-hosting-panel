@@ -159,6 +159,86 @@ class User(UserMixin, TimestampMixin, db.Model):
         back_populates="created_by",
         foreign_keys="ClientSSHKey.created_by_user_id",
     )
+    created_legal_holds = db.relationship(
+        "DataLegalHold",
+        back_populates="created_by",
+        foreign_keys="DataLegalHold.created_by_user_id",
+    )
+    retention_cleanup_runs = db.relationship(
+        "RetentionCleanupRun",
+        back_populates="triggered_by",
+        foreign_keys="RetentionCleanupRun.triggered_by_user_id",
+    )
+    created_vault_secrets = db.relationship(
+        "VaultSecret",
+        back_populates="created_by",
+        foreign_keys="VaultSecret.created_by_user_id",
+    )
+    updated_vault_secrets = db.relationship(
+        "VaultSecret",
+        back_populates="updated_by",
+        foreign_keys="VaultSecret.updated_by_user_id",
+    )
+    vault_secret_versions = db.relationship(
+        "VaultSecretVersion",
+        back_populates="created_by",
+        foreign_keys="VaultSecretVersion.created_by_user_id",
+    )
+    event_entries = db.relationship(
+        "EventStreamEntry",
+        back_populates="actor",
+        foreign_keys="EventStreamEntry.actor_user_id",
+    )
+    compliance_runs = db.relationship(
+        "ComplianceRun",
+        back_populates="triggered_by",
+        foreign_keys="ComplianceRun.triggered_by_user_id",
+    )
+    owned_compliance_controls = db.relationship(
+        "ComplianceChecklistItem",
+        back_populates="owner",
+        foreign_keys="ComplianceChecklistItem.owner_user_id",
+    )
+    compliance_controls_created = db.relationship(
+        "ComplianceChecklistItem",
+        back_populates="created_by",
+        foreign_keys="ComplianceChecklistItem.created_by_user_id",
+    )
+    compliance_controls_updated = db.relationship(
+        "ComplianceChecklistItem",
+        back_populates="updated_by",
+        foreign_keys="ComplianceChecklistItem.updated_by_user_id",
+    )
+    compliance_evidence_links = db.relationship(
+        "ComplianceEvidenceLink",
+        back_populates="linked_by",
+        foreign_keys="ComplianceEvidenceLink.linked_by_user_id",
+    )
+    policy_documents_created = db.relationship(
+        "PolicyDocument",
+        back_populates="created_by",
+        foreign_keys="PolicyDocument.created_by_user_id",
+    )
+    policy_documents_updated = db.relationship(
+        "PolicyDocument",
+        back_populates="updated_by",
+        foreign_keys="PolicyDocument.updated_by_user_id",
+    )
+    policy_evaluations = db.relationship(
+        "PolicyEvaluation",
+        back_populates="evaluated_by",
+        foreign_keys="PolicyEvaluation.evaluated_by_user_id",
+    )
+    onboarding_state_updates = db.relationship(
+        "ClientOnboardingState",
+        back_populates="updated_by",
+        foreign_keys="ClientOnboardingState.updated_by_user_id",
+    )
+    dr_checks = db.relationship(
+        "DisasterRecoveryCheckRun",
+        back_populates="checked_by",
+        foreign_keys="DisasterRecoveryCheckRun.checked_by_user_id",
+    )
 
     def set_password(self, password: str) -> None:
         self.password_hash = bcrypt.generate_password_hash(password).decode("utf-8")
@@ -241,6 +321,37 @@ class Client(TimestampMixin, db.Model):
     overdue_reminders = db.relationship("OverdueReminder", back_populates="client", cascade="all, delete-orphan")
     approval_requests = db.relationship("ApprovalRequest", back_populates="client", cascade="all, delete-orphan")
     ssh_keys = db.relationship("ClientSSHKey", back_populates="client", cascade="all, delete-orphan")
+    retention_policies = db.relationship("TenantRetentionPolicy", back_populates="client", cascade="all, delete-orphan")
+    legal_holds = db.relationship("DataLegalHold", back_populates="client", cascade="all, delete-orphan")
+    vault_secrets = db.relationship("VaultSecret", back_populates="client", cascade="all, delete-orphan")
+    event_entries = db.relationship("EventStreamEntry", back_populates="client", cascade="all, delete-orphan")
+    compliance_runs = db.relationship("ComplianceRun", back_populates="client", cascade="all, delete-orphan")
+    compliance_results = db.relationship("ComplianceResult", back_populates="client", cascade="all, delete-orphan")
+    compliance_checklist_items = db.relationship(
+        "ComplianceChecklistItem",
+        back_populates="client",
+        cascade="all, delete-orphan",
+    )
+    compliance_evidence_links = db.relationship(
+        "ComplianceEvidenceLink",
+        back_populates="client",
+        cascade="all, delete-orphan",
+    )
+    policy_documents = db.relationship("PolicyDocument", back_populates="client", cascade="all, delete-orphan")
+    policy_evaluations = db.relationship("PolicyEvaluation", back_populates="client", cascade="all, delete-orphan")
+    onboarding_state = db.relationship(
+        "ClientOnboardingState",
+        back_populates="client",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    dr_profile = db.relationship(
+        "DisasterRecoveryProfile",
+        back_populates="client",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
+    dr_check_runs = db.relationship("DisasterRecoveryCheckRun", back_populates="client", cascade="all, delete-orphan")
 
 
 class ClientBalance(TimestampMixin, db.Model):
@@ -1279,6 +1390,306 @@ class ExportJob(TimestampMixin, db.Model):
     requested_by = db.relationship("User", back_populates="export_jobs", foreign_keys=[requested_by_user_id])
 
 
+class TenantRetentionPolicy(TimestampMixin, db.Model):
+    __tablename__ = "tenant_retention_policies"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
+    resource_type = db.Column(db.String(64), nullable=False, index=True)
+    anonymize_after_days = db.Column(db.Integer, nullable=True)
+    delete_after_days = db.Column(db.Integer, nullable=True)
+    legal_hold_enabled = db.Column(db.Boolean, nullable=False, default=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    notes = db.Column(db.String(255), nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    client = db.relationship("Client", back_populates="retention_policies")
+
+    __table_args__ = (
+        UniqueConstraint("client_id", "resource_type", name="uq_retention_policy_client_resource"),
+    )
+
+
+class DataLegalHold(TimestampMixin, db.Model):
+    __tablename__ = "data_legal_holds"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=True, index=True)
+    resource_type = db.Column(db.String(64), nullable=False, index=True)
+    resource_id = db.Column(db.String(120), nullable=True, index=True)
+    status = db.Column(db.String(16), nullable=False, default="active", index=True)
+    reason = db.Column(db.String(255), nullable=False)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    starts_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    expires_at = db.Column(db.DateTime, nullable=True, index=True)
+    released_at = db.Column(db.DateTime, nullable=True, index=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    client = db.relationship("Client", back_populates="legal_holds")
+    created_by = db.relationship("User", back_populates="created_legal_holds", foreign_keys=[created_by_user_id])
+
+
+class RetentionCleanupRun(TimestampMixin, db.Model):
+    __tablename__ = "retention_cleanup_runs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    run_key = db.Column(db.String(120), nullable=True, unique=True, index=True)
+    status = db.Column(db.String(32), nullable=False, default="queued", index=True)
+    summary_json = db.Column(db.JSON, nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+    triggered_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+
+    triggered_by = db.relationship("User", back_populates="retention_cleanup_runs", foreign_keys=[triggered_by_user_id])
+
+
+class VaultSecret(TimestampMixin, db.Model):
+    __tablename__ = "vault_secrets"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=True, index=True)
+    name = db.Column(db.String(120), nullable=False, index=True)
+    secret_type = db.Column(db.String(64), nullable=False, index=True)
+    description = db.Column(db.String(255), nullable=True)
+    status = db.Column(db.String(32), nullable=False, default="active", index=True)
+    current_version = db.Column(db.Integer, nullable=False, default=0)
+    rotation_interval_days = db.Column(db.Integer, nullable=True)
+    last_rotated_at = db.Column(db.DateTime, nullable=True, index=True)
+    next_rotation_due_at = db.Column(db.DateTime, nullable=True, index=True)
+    last_revealed_at = db.Column(db.DateTime, nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    updated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+
+    client = db.relationship("Client", back_populates="vault_secrets")
+    created_by = db.relationship("User", back_populates="created_vault_secrets", foreign_keys=[created_by_user_id])
+    updated_by = db.relationship("User", back_populates="updated_vault_secrets", foreign_keys=[updated_by_user_id])
+    versions = db.relationship(
+        "VaultSecretVersion",
+        back_populates="secret",
+        cascade="all, delete-orphan",
+        order_by="desc(VaultSecretVersion.version)",
+    )
+
+    __table_args__ = (
+        UniqueConstraint("client_id", "name", name="uq_vault_secret_client_name"),
+    )
+
+
+class VaultSecretVersion(TimestampMixin, db.Model):
+    __tablename__ = "vault_secret_versions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    secret_id = db.Column(db.Integer, db.ForeignKey("vault_secrets.id"), nullable=False, index=True)
+    version = db.Column(db.Integer, nullable=False)
+    value_encrypted = db.Column(db.Text, nullable=False)
+    value_fingerprint = db.Column(db.String(64), nullable=True, index=True)
+    is_current = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    rotated_reason = db.Column(db.String(255), nullable=True)
+    expires_at = db.Column(db.DateTime, nullable=True, index=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+
+    secret = db.relationship("VaultSecret", back_populates="versions")
+    created_by = db.relationship("User", back_populates="vault_secret_versions", foreign_keys=[created_by_user_id])
+
+    __table_args__ = (
+        UniqueConstraint("secret_id", "version", name="uq_vault_secret_version"),
+    )
+
+
+class EventStreamEntry(TimestampMixin, db.Model):
+    __tablename__ = "event_stream_entries"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=True, index=True)
+    actor_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    event_type = db.Column(db.String(120), nullable=False, index=True)
+    category = db.Column(db.String(64), nullable=False, index=True)
+    severity = db.Column(db.String(16), nullable=False, default="info", index=True)
+    source = db.Column(db.String(64), nullable=True, index=True)
+    message = db.Column(db.String(255), nullable=False)
+    payload_json = db.Column(db.JSON, nullable=True)
+    event_fingerprint = db.Column(db.String(64), nullable=True, index=True)
+    event_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    client = db.relationship("Client", back_populates="event_entries")
+    actor = db.relationship("User", back_populates="event_entries", foreign_keys=[actor_user_id])
+
+
+class ComplianceRun(TimestampMixin, db.Model):
+    __tablename__ = "compliance_runs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=True, index=True)
+    status = db.Column(db.String(32), nullable=False, default="queued", index=True)
+    score = db.Column(db.Integer, nullable=True)
+    summary_json = db.Column(db.JSON, nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+    triggered_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+
+    client = db.relationship("Client", back_populates="compliance_runs")
+    triggered_by = db.relationship("User", back_populates="compliance_runs", foreign_keys=[triggered_by_user_id])
+    results = db.relationship("ComplianceResult", back_populates="run", cascade="all, delete-orphan")
+
+
+class ComplianceResult(TimestampMixin, db.Model):
+    __tablename__ = "compliance_results"
+
+    id = db.Column(db.Integer, primary_key=True)
+    run_id = db.Column(db.Integer, db.ForeignKey("compliance_runs.id"), nullable=False, index=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=True, index=True)
+    check_code = db.Column(db.String(64), nullable=False, index=True)
+    status = db.Column(db.String(16), nullable=False, index=True)
+    severity = db.Column(db.String(16), nullable=False, default="medium")
+    score = db.Column(db.Integer, nullable=True)
+    message = db.Column(db.String(255), nullable=False)
+    details_json = db.Column(db.JSON, nullable=True)
+    evidence_ref = db.Column(db.String(255), nullable=True)
+
+    run = db.relationship("ComplianceRun", back_populates="results")
+    client = db.relationship("Client", back_populates="compliance_results")
+
+
+class ComplianceChecklistItem(TimestampMixin, db.Model):
+    __tablename__ = "compliance_checklist_items"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=True, index=True)
+    control_code = db.Column(db.String(64), nullable=False, index=True)
+    title = db.Column(db.String(160), nullable=False)
+    description = db.Column(db.String(255), nullable=True)
+    status = db.Column(db.String(32), nullable=False, default="not_started", index=True)
+    owner_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    due_date = db.Column(db.Date, nullable=True, index=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    updated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+
+    client = db.relationship("Client", back_populates="compliance_checklist_items")
+    owner = db.relationship("User", back_populates="owned_compliance_controls", foreign_keys=[owner_user_id])
+    created_by = db.relationship("User", back_populates="compliance_controls_created", foreign_keys=[created_by_user_id])
+    updated_by = db.relationship("User", back_populates="compliance_controls_updated", foreign_keys=[updated_by_user_id])
+    evidence_links = db.relationship("ComplianceEvidenceLink", back_populates="checklist_item", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        UniqueConstraint("client_id", "control_code", name="uq_compliance_control_client_code"),
+    )
+
+
+class ComplianceEvidenceLink(TimestampMixin, db.Model):
+    __tablename__ = "compliance_evidence_links"
+
+    id = db.Column(db.Integer, primary_key=True)
+    checklist_item_id = db.Column(db.Integer, db.ForeignKey("compliance_checklist_items.id"), nullable=False, index=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=True, index=True)
+    evidence_type = db.Column(db.String(32), nullable=False, index=True)
+    reference_id = db.Column(db.String(120), nullable=False, index=True)
+    reference_label = db.Column(db.String(255), nullable=True)
+    linked_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    checklist_item = db.relationship("ComplianceChecklistItem", back_populates="evidence_links")
+    client = db.relationship("Client", back_populates="compliance_evidence_links")
+    linked_by = db.relationship("User", back_populates="compliance_evidence_links", foreign_keys=[linked_by_user_id])
+
+    __table_args__ = (
+        UniqueConstraint("checklist_item_id", "evidence_type", "reference_id", name="uq_compliance_evidence_link"),
+    )
+
+
+class PolicyDocument(TimestampMixin, db.Model):
+    __tablename__ = "policy_documents"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False, index=True)
+    scope = db.Column(db.String(32), nullable=False, default="global", index=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=True, index=True)
+    version = db.Column(db.String(32), nullable=False, default="v1")
+    enforcement_mode = db.Column(db.String(16), nullable=False, default="advisory", index=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    description = db.Column(db.String(255), nullable=True)
+    definition_json = db.Column(db.JSON, nullable=False, default=dict)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    updated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+
+    client = db.relationship("Client", back_populates="policy_documents")
+    created_by = db.relationship("User", back_populates="policy_documents_created", foreign_keys=[created_by_user_id])
+    updated_by = db.relationship("User", back_populates="policy_documents_updated", foreign_keys=[updated_by_user_id])
+    evaluations = db.relationship("PolicyEvaluation", back_populates="policy", cascade="all, delete-orphan")
+
+
+class PolicyEvaluation(TimestampMixin, db.Model):
+    __tablename__ = "policy_evaluations"
+
+    id = db.Column(db.Integer, primary_key=True)
+    policy_id = db.Column(db.Integer, db.ForeignKey("policy_documents.id"), nullable=False, index=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=True, index=True)
+    event_type = db.Column(db.String(120), nullable=False, index=True)
+    target_type = db.Column(db.String(64), nullable=True, index=True)
+    target_id = db.Column(db.String(120), nullable=True, index=True)
+    decision = db.Column(db.String(16), nullable=False, index=True)
+    message = db.Column(db.String(255), nullable=True)
+    input_json = db.Column(db.JSON, nullable=True)
+    evaluated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+
+    policy = db.relationship("PolicyDocument", back_populates="evaluations")
+    client = db.relationship("Client", back_populates="policy_evaluations")
+    evaluated_by = db.relationship("User", back_populates="policy_evaluations", foreign_keys=[evaluated_by_user_id])
+
+
+class ClientOnboardingState(TimestampMixin, db.Model):
+    __tablename__ = "client_onboarding_states"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, unique=True, index=True)
+    completed_steps_json = db.Column(db.JSON, nullable=False, default=list)
+    skipped_steps_json = db.Column(db.JSON, nullable=False, default=list)
+    last_step = db.Column(db.String(64), nullable=True)
+    completion_percent = db.Column(db.Integer, nullable=False, default=0)
+    completed_at = db.Column(db.DateTime, nullable=True, index=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+    updated_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+
+    client = db.relationship("Client", back_populates="onboarding_state")
+    updated_by = db.relationship("User", back_populates="onboarding_state_updates", foreign_keys=[updated_by_user_id])
+
+
+class DisasterRecoveryProfile(TimestampMixin, db.Model):
+    __tablename__ = "disaster_recovery_profiles"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, unique=True, index=True)
+    primary_region = db.Column(db.String(64), nullable=True)
+    secondary_region = db.Column(db.String(64), nullable=True)
+    rpo_target_minutes = db.Column(db.Integer, nullable=False, default=1440)
+    rto_target_minutes = db.Column(db.Integer, nullable=False, default=240)
+    failover_last_tested_at = db.Column(db.DateTime, nullable=True)
+    notes = db.Column(db.String(255), nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    client = db.relationship("Client", back_populates="dr_profile")
+
+
+class DisasterRecoveryCheckRun(TimestampMixin, db.Model):
+    __tablename__ = "disaster_recovery_check_runs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=True, index=True)
+    status = db.Column(db.String(32), nullable=False, default="queued", index=True)
+    score = db.Column(db.Integer, nullable=True)
+    rpo_minutes = db.Column(db.Integer, nullable=True)
+    rto_minutes = db.Column(db.Integer, nullable=True)
+    message = db.Column(db.String(255), nullable=True)
+    details_json = db.Column(db.JSON, nullable=True)
+    checked_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    checked_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+
+    client = db.relationship("Client", back_populates="dr_check_runs")
+    checked_by = db.relationship("User", back_populates="dr_checks", foreign_keys=[checked_by_user_id])
+
+
 Index("ix_activity_logs_entity", ActivityLog.entity_type, ActivityLog.entity_id)
 Index("ix_billing_cycles_due_status", BillingCycle.due_date, BillingCycle.status)
 Index("ix_client_services_type_status", ClientService.service_type, ClientService.status)
@@ -1309,3 +1720,17 @@ Index("ix_export_jobs_dataset_created", ExportJob.dataset, ExportJob.created_at)
 Index("ix_domain_registrations_provider_expiry", DomainRegistration.registrar, DomainRegistration.expires_on)
 Index("ix_overdue_reminders_client_sent", OverdueReminder.client_id, OverdueReminder.sent_at)
 Index("ix_fraud_checks_level_created", RegistrationFraudCheck.risk_level, RegistrationFraudCheck.created_at)
+Index("ix_retention_policy_client_resource", TenantRetentionPolicy.client_id, TenantRetentionPolicy.resource_type)
+Index("ix_legal_holds_scope_status", DataLegalHold.client_id, DataLegalHold.resource_type, DataLegalHold.status)
+Index("ix_retention_runs_status_started", RetentionCleanupRun.status, RetentionCleanupRun.started_at)
+Index("ix_vault_secret_rotation_due", VaultSecret.next_rotation_due_at, VaultSecret.status)
+Index("ix_vault_secret_version_current", VaultSecretVersion.secret_id, VaultSecretVersion.is_current)
+Index("ix_event_stream_category_time", EventStreamEntry.category, EventStreamEntry.event_at)
+Index("ix_event_stream_client_time", EventStreamEntry.client_id, EventStreamEntry.event_at)
+Index("ix_compliance_result_run_status", ComplianceResult.run_id, ComplianceResult.status)
+Index("ix_compliance_control_client_status", ComplianceChecklistItem.client_id, ComplianceChecklistItem.status)
+Index("ix_compliance_evidence_type_ref", ComplianceEvidenceLink.evidence_type, ComplianceEvidenceLink.reference_id)
+Index("ix_policy_doc_scope_active", PolicyDocument.scope, PolicyDocument.is_active)
+Index("ix_policy_eval_event_decision", PolicyEvaluation.event_type, PolicyEvaluation.decision)
+Index("ix_onboarding_client_percent", ClientOnboardingState.client_id, ClientOnboardingState.completion_percent)
+Index("ix_dr_checks_client_time", DisasterRecoveryCheckRun.client_id, DisasterRecoveryCheckRun.checked_at)

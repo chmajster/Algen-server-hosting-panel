@@ -20,6 +20,7 @@ from panel.services.backup_storage import (
     validate_backup_target_connectivity,
 )
 from panel.services.backup_verification import run_verification_schedule, verify_backup
+from panel.services.policy_engine import PolicyViolationError, enforce_policies
 from panel.utils.decorators import active_account_required, roles_required
 from panel.utils.query import client_choices, current_client, database_choices, domain_choices
 
@@ -222,7 +223,39 @@ def admin_verify_schedule(schedule_type: str):
 def admin_restore_request(backup_id: int):
     backup = Backup.query.get_or_404(backup_id)
 
-    if action_requires_approval("backups.restore"):
+    requires_approval = action_requires_approval("backups.restore")
+    try:
+        enforce_policies(
+            event_type="backups.restore.request",
+            context={
+                "action": "backups.restore",
+                "client_id": backup.client_id,
+                "backup_id": backup.id,
+                "backup_type": backup.backup_type,
+                "requires_approval": requires_approval,
+                "approval_granted": False,
+            },
+            client=backup.client,
+            actor=current_user,
+            target_type="backup",
+            target_id=backup.id,
+        )
+    except PolicyViolationError as exc:
+        log_activity(
+            "policy.backup_restore_blocked",
+            "backup",
+            f"Policy zablokowala restore backupu #{backup.id}",
+            entity_id=backup.id,
+            client=backup.client,
+            actor=current_user,
+            success=False,
+            metadata={"reason": str(exc), "action": "backups.restore"},
+        )
+        db.session.commit()
+        flash(f"Restore backupu zablokowany przez policy: {exc}", "danger")
+        return redirect(url_for("backups.admin_backups"))
+
+    if requires_approval:
         approval_request, created = create_approval_request(
             action_key="backups.restore",
             target_type="backup",

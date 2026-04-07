@@ -106,6 +106,7 @@ def register_blueprints(app: Flask) -> None:
     from panel.domains.routes import domains_bp
     from panel.files.routes import files_bp
     from panel.ftp.routes import ftp_bp
+    from panel.governance.routes import governance_bp
     from panel.hosts.routes import hosts_bp
     from panel.mail.routes import mail_bp
     from panel.monitoring.routes import monitoring_bp
@@ -129,6 +130,7 @@ def register_blueprints(app: Flask) -> None:
         ssl_bp,
         backups_bp,
         files_bp,
+        governance_bp,
         monitoring_bp,
         ssh_bp,
         status_bp,
@@ -147,9 +149,13 @@ def register_cli(app: Flask) -> None:
     from panel.seed import seed_defaults
     from panel.services.billing import run_billing_cycle, run_financial_enforcement
     from panel.services.backup_restore import process_restore_job
+    from panel.services.compliance import run_compliance_checks
     from panel.services.client_resources import record_client_resource_samples
+    from panel.services.dr_readiness import run_dr_readiness_checks, run_failover_simulation
     from panel.services.migrations import run_due_migration_jobs
     from panel.services.overdue_reminders import send_overdue_reminders
+    from panel.services.retention import run_retention_cleanup
+    from panel.services.secrets_vault import run_rotation_schedule
     from panel.services.audit import verify_activity_chain
     from panel.services.smoketest import run_app_smoke_test, write_smoke_test_log
     from panel.services.ticket_sla import escalate_due_tickets
@@ -278,6 +284,70 @@ def register_cli(app: Flask) -> None:
         if processed:
             db.session.commit()
         click.echo(f"Przetworzono jobow migracji: {processed}")
+
+    @app.cli.command("run-retention-cleanup")
+    @click.option("--run-key", default="", show_default=False)
+    @click.option("--client-id", default=None, type=int)
+    def run_retention_cleanup_command(run_key: str, client_id: int | None):
+        result = run_retention_cleanup(
+            run_key=run_key or None,
+            triggered_by=None,
+            client_id=client_id,
+        )
+        db.session.commit()
+        click.echo(
+            "Retention cleanup: "
+            f"run_id={result.get('run_id')}, "
+            f"status={result.get('status')}, "
+            f"idempotent={result.get('idempotent')}"
+        )
+
+    @app.cli.command("run-secret-rotation-scan")
+    @click.option("--auto-rotate", is_flag=True, default=False)
+    def run_secret_rotation_scan(auto_rotate: bool):
+        summary = run_rotation_schedule(actor=None, auto_rotate=auto_rotate)
+        db.session.commit()
+        click.echo(
+            "Secret rotation: "
+            f"due={summary['due']}, rotated={summary['rotated']}, errors={summary['errors']}"
+        )
+
+    @app.cli.command("run-compliance-checks")
+    @click.option("--client-id", default=None, type=int)
+    def run_compliance_checks_command(client_id: int | None):
+        run = run_compliance_checks(actor=None, client_id=client_id)
+        db.session.commit()
+        click.echo(
+            "Compliance run: "
+            f"id={run.id}, status={run.status}, score={run.score}, client_id={run.client_id}"
+        )
+
+    @app.cli.command("run-dr-checks")
+    @click.option("--client-id", default=None, type=int)
+    def run_dr_checks_command(client_id: int | None):
+        summary = run_dr_readiness_checks(actor=None, client_id=client_id)
+        db.session.commit()
+        click.echo(
+            "DR checks: "
+            f"clients={summary['clients']}, overall_score={summary['overall_score']}"
+        )
+
+    @app.cli.command("run-dr-failover-test")
+    @click.option("--client-id", required=True, type=int)
+    @click.option("--unsafe", is_flag=True, default=False)
+    def run_dr_failover_test_command(client_id: int, unsafe: bool):
+        from panel.models import Client
+
+        client = Client.query.get(client_id)
+        if client is None:
+            raise click.ClickException(f"Nie znaleziono klienta id={client_id}")
+
+        summary = run_failover_simulation(client=client, actor=None, safe_mode=not unsafe)
+        db.session.commit()
+        click.echo(
+            "DR failover simulation: "
+            f"run_id={summary['run_id']}, result={summary['result']}, safe_mode={summary['safe_mode']}"
+        )
 
     @app.cli.command("process-restore-jobs")
     @click.option("--limit", default=50, show_default=True, type=int)

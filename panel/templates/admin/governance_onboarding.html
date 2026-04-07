@@ -1,0 +1,79 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Onboarding visibility</h1>
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <form method="get" class="row g-2 align-items-end">
+    <div class="col-12 col-md-4">
+      <label class="form-label">Klient</label>
+      <select class="form-select" name="client_id" onchange="this.form.submit()">
+        {% for cid, label in clients %}
+        <option value="{{ cid }}" {% if selected_client and selected_client.id == cid %}selected{% endif %}>{{ label }} ({{ cid }})</option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <h2 class="h5 mb-3">Status per tenant</h2>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Tenant</th>
+          <th>Progress</th>
+          <th>Completed steps</th>
+          <th>Failed steps</th>
+          <th>Updated</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+        <tr>
+          <td>{{ row.client.user.username if row.client.user else row.client.id }}</td>
+          <td>{{ row.percent }}%</td>
+          <td>{{ row.completed }}</td>
+          <td>{{ row.failed }}</td>
+          <td>{{ row.state.updated_at.strftime('%Y-%m-%d %H:%M:%S') if row.state and row.state.updated_at else '-' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-secondary">Brak danych onboarding.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% if selected_client and selected_view %}
+<div class="surface-card p-3">
+  <h2 class="h5 mb-3">Szczegoly: {{ selected_client.user.username if selected_client.user else selected_client.id }}</h2>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Krok</th>
+          <th>Opis</th>
+          <th>Status</th>
+          <th>Verified</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for step in selected_view.steps %}
+        <tr>
+          <td>{{ step.title }}</td>
+          <td>{{ step.description }}</td>
+          <td>{{ step.status }}</td>
+          <td>{{ 'yes' if step.auto_done else 'no' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-secondary">Brak krokow.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

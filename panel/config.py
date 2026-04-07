@@ -12,6 +12,7 @@ load_dotenv(BASE_DIR / ".env")
 
 class Config:
     SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
+    SECRETS_VAULT_KEY = os.getenv("SECRETS_VAULT_KEY", SECRET_KEY)
     SQLALCHEMY_DATABASE_URI = os.getenv(
         "DATABASE_URL",
         "sqlite:///" + str(BASE_DIR / "storage" / "dev.db"),

@@ -1,0 +1,200 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Event stream</h1>
+  <button class="btn btn-outline-primary" id="toggleStream">Auto-refresh: ON</button>
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <form method="get" class="row g-2 align-items-end" id="eventFilterForm">
+    <div class="col-12 col-md-2">
+      <label class="form-label">Client</label>
+      <select class="form-select" name="client_id" id="filterClient">
+        <option value="">all</option>
+        {% for cid, label in clients %}
+        <option value="{{ cid }}" {% if selected_client_id == cid %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-2">
+      <label class="form-label">Category</label>
+      <select class="form-select" name="category" id="filterCategory">
+        <option value="">all</option>
+        {% for item in categories %}
+        <option value="{{ item }}" {% if category == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-2">
+      <label class="form-label">Severity</label>
+      <select class="form-select" name="severity" id="filterSeverity">
+        <option value="">all</option>
+        {% for item in severities %}
+        <option value="{{ item }}" {% if severity == item %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-2">
+      <label class="form-label">Event type</label>
+      <input class="form-control" type="text" name="event_type" id="filterEventType" value="{{ event_type or '' }}">
+    </div>
+    <div class="col-12 col-md-3">
+      <label class="form-label">Search</label>
+      <input class="form-control" type="text" name="search" id="filterSearch" value="{{ search or '' }}">
+    </div>
+    <div class="col-12 col-md-1 d-grid">
+      <button class="btn btn-primary">Filtruj</button>
+    </div>
+  </form>
+</div>
+
+<div class="surface-card p-3">
+  <div class="table-responsive">
+    <table class="table align-middle" id="eventTable">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Czas</th>
+          <th>Category</th>
+          <th>Severity</th>
+          <th>Event</th>
+          <th>Message</th>
+          <th>Client</th>
+          <th>Actor</th>
+        </tr>
+      </thead>
+      <tbody id="eventRows">
+        {% for row in rows %}
+        <tr data-event-id="{{ row.id }}">
+          <td>#{{ row.id }}</td>
+          <td>{{ row.event_at.strftime('%Y-%m-%d %H:%M:%S') if row.event_at else '-' }}</td>
+          <td>{{ row.category }}</td>
+          <td>{{ row.severity }}</td>
+          <td>{{ row.event_type }}</td>
+          <td>{{ row.message }}</td>
+          <td>{{ row.client.user.username if row.client and row.client.user else '-' }}</td>
+          <td>{{ row.actor.username if row.actor else '-' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="text-secondary">Brak zdarzen.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+(() => {
+  const rowsEl = document.getElementById("eventRows");
+  const toggleBtn = document.getElementById("toggleStream");
+  if (!rowsEl || !toggleBtn || !window.EventSource) {
+    return;
+  }
+
+  let enabled = true;
+  let source = null;
+  let maxId = 0;
+  for (const row of rowsEl.querySelectorAll("tr[data-event-id]")) {
+    const rowId = Number(row.getAttribute("data-event-id") || 0);
+    if (rowId > maxId) {
+      maxId = rowId;
+    }
+  }
+
+  const filterValue = (id) => {
+    const el = document.getElementById(id);
+    return el ? String(el.value || "") : "";
+  };
+
+  const buildUrl = () => {
+    const params = new URLSearchParams();
+    if (maxId > 0) {
+      params.set("last_id", String(maxId));
+    }
+    const client = filterValue("filterClient");
+    const category = filterValue("filterCategory");
+    const severity = filterValue("filterSeverity");
+    const eventType = filterValue("filterEventType");
+    const search = filterValue("filterSearch");
+    if (client) params.set("client_id", client);
+    if (category) params.set("category", category);
+    if (severity) params.set("severity", severity);
+    if (eventType) params.set("event_type", eventType);
+    if (search) params.set("search", search);
+    return "{{ url_for('governance.events_stream') }}?" + params.toString();
+  };
+
+  const prependRow = (payload) => {
+    const tr = document.createElement("tr");
+    tr.setAttribute("data-event-id", String(payload.id));
+    const eventAt = payload.event_at ? payload.event_at.replace("T", " ").replace("Z", "") : "-";
+    tr.innerHTML = [
+      `<td>#${payload.id}</td>`,
+      `<td>${eventAt}</td>`,
+      `<td>${payload.category || '-'}</td>`,
+      `<td>${payload.severity || '-'}</td>`,
+      `<td>${payload.event_type || '-'}</td>`,
+      `<td>${payload.message || '-'}</td>`,
+      `<td>${payload.client_id || '-'}</td>`,
+      `<td>${payload.actor_user_id || '-'}</td>`,
+    ].join("");
+    rowsEl.prepend(tr);
+
+    const maxRows = 250;
+    while (rowsEl.children.length > maxRows) {
+      rowsEl.removeChild(rowsEl.lastElementChild);
+    }
+  };
+
+  const startStream = () => {
+    if (!enabled) {
+      return;
+    }
+    if (source) {
+      source.close();
+    }
+    source = new EventSource(buildUrl());
+    source.onmessage = (event) => {
+      if (!event.data) {
+        return;
+      }
+      try {
+        const payload = JSON.parse(event.data);
+        if (!payload || !payload.id) {
+          return;
+        }
+        if (Number(payload.id) <= maxId) {
+          return;
+        }
+        maxId = Number(payload.id);
+        prependRow(payload);
+      } catch (_err) {
+        // ignore malformed payload
+      }
+    };
+    source.onerror = () => {
+      if (source) {
+        source.close();
+      }
+      source = null;
+      if (enabled) {
+        window.setTimeout(startStream, 2000);
+      }
+    };
+  };
+
+  toggleBtn.addEventListener("click", () => {
+    enabled = !enabled;
+    toggleBtn.textContent = `Auto-refresh: ${enabled ? "ON" : "OFF"}`;
+    if (enabled) {
+      startStream();
+    } else if (source) {
+      source.close();
+      source = null;
+    }
+  });
+
+  startStream();
+})();
+</script>
+{% endblock %}

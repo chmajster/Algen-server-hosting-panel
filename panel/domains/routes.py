@@ -18,6 +18,7 @@ from panel.services.domains import (
     provision_domain_tree,
     provision_subdomain_tree,
 )
+from panel.services.policy_engine import PolicyViolationError, enforce_policies
 from panel.services.registrar import RegistrarError, register_domain_with_registrar, renew_domain_registration, sync_domain_registration
 from panel.utils.decorators import active_account_required, roles_required
 from panel.utils.query import client_choices, current_client, owned_or_404, service_choices
@@ -243,7 +244,38 @@ def admin_domain_delete(domain_id: int):
     client = domain.client
     name = domain.name
 
-    if action_requires_approval("domains.delete"):
+    requires_approval = action_requires_approval("domains.delete")
+    try:
+        enforce_policies(
+            event_type="domains.delete.request",
+            context={
+                "action": "domains.delete",
+                "client_id": client.id if client else None,
+                "domain_id": domain.id,
+                "requires_approval": requires_approval,
+                "approval_granted": False,
+            },
+            client=client,
+            actor=current_user,
+            target_type="domain",
+            target_id=domain.id,
+        )
+    except PolicyViolationError as exc:
+        log_activity(
+            "policy.domains_delete_blocked",
+            "domain",
+            f"Policy zablokowala usuniecie domeny {name}",
+            entity_id=domain.id,
+            client=client,
+            actor=current_user,
+            success=False,
+            metadata={"reason": str(exc), "action": "domains.delete"},
+        )
+        db.session.commit()
+        flash(f"Usuniecie domeny zablokowane przez policy: {exc}", "danger")
+        return redirect(url_for("domains.admin_domains"))
+
+    if requires_approval:
         approval_request, created = create_approval_request(
             action_key="domains.delete",
             target_type="domain",

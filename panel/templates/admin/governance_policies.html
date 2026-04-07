@@ -1,0 +1,149 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Policy-as-code</h1>
+</div>
+
+{% if test_result %}
+<div class="surface-card p-3 mb-3">
+  <h2 class="h5 mb-2">Wynik testu policy #{{ test_result.policy_id }}</h2>
+  <div class="small text-secondary mb-2">event={{ test_result.event_type }} | matched={{ test_result.matched }} | blocked={{ test_result.blocked }}</div>
+  <pre class="mb-0" style="white-space: pre-wrap;">{{ test_result.decisions }}</pre>
+</div>
+{% endif %}
+
+<div class="row g-3 mb-3">
+  <div class="col-12 col-xl-5">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Nowa policy</h2>
+      <form method="post" action="{{ url_for('governance.policies_create') }}" class="row g-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-12 col-md-6"><label class="form-label">Nazwa</label><input class="form-control" type="text" name="name" maxlength="120" required></div>
+        <div class="col-12 col-md-6"><label class="form-label">Version</label><input class="form-control" type="text" name="version" value="v1" maxlength="32"></div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Scope</label>
+          <select class="form-select" name="scope">
+            <option value="global">global</option>
+            <option value="tenant">tenant</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Tenant (dla scope=tenant)</label>
+          <select class="form-select" name="client_id">
+            <option value="0">-</option>
+            {% for cid, label in clients %}
+            <option value="{{ cid }}">{{ label }} ({{ cid }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Enforcement</label>
+          <select class="form-select" name="enforcement_mode">
+            <option value="advisory">advisory</option>
+            <option value="enforce">enforce</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Lifecycle state</label>
+          <select class="form-select" name="lifecycle_state">
+            <option value="draft">draft</option>
+            <option value="active">active</option>
+            <option value="archived">archived</option>
+          </select>
+        </div>
+        <div class="col-12 col-md-6"><label class="form-label">Opis</label><input class="form-control" type="text" name="description" maxlength="255"></div>
+        <div class="col-12">
+          <label class="form-label">Definition JSON</label>
+          <textarea class="form-control" name="definition_json" rows="10">{
+  "rules": [
+    {
+      "event": "domains.delete.request",
+      "when": {
+        "all": [
+          {"field": "requires_approval", "operator": "eq", "value": true},
+          {"field": "approval_granted", "operator": "eq", "value": false}
+        ]
+      },
+      "effect": "deny",
+      "message": "Delete domeny wymaga approval"
+    }
+  ]
+}</textarea>
+        </div>
+        <div class="col-12"><button class="btn btn-primary">Zapisz policy</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-7">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Policy dokumenty</h2>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead><tr><th>ID</th><th>Name</th><th>Scope</th><th>Mode</th><th>State</th><th>Active</th><th>Akcje</th></tr></thead>
+          <tbody>
+            {% for row in policies %}
+            <tr>
+              <td>#{{ row.id }}</td>
+              <td>{{ row.name }} <span class="text-secondary small">({{ row.version }})</span></td>
+              <td>{{ row.scope }}{% if row.client %}:{{ row.client.user.username if row.client.user else row.client_id }}{% endif %}</td>
+              <td>{{ row.enforcement_mode }}</td>
+              <td>{{ policy_state(row) }}</td>
+              <td>{{ 'yes' if row.is_active else 'no' }}</td>
+              <td>
+                <div class="d-flex flex-column gap-2">
+                  <form method="post" action="{{ url_for('governance.policies_activate', policy_id=row.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-outline-success">Activate</button>
+                  </form>
+                  <form method="post" action="{{ url_for('governance.policies_archive', policy_id=row.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-outline-secondary">Archive</button>
+                  </form>
+                  <form method="post" action="{{ url_for('governance.policies_rollback', policy_id=row.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-outline-warning">Rollback</button>
+                  </form>
+                  <form method="post" action="{{ url_for('governance.policies_test', policy_id=row.id) }}" class="d-flex gap-1">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input class="form-control form-control-sm" type="text" name="event_type" placeholder="event" required>
+                    <input class="form-control form-control-sm" type="text" name="target_type" placeholder="target_type">
+                    <input class="form-control form-control-sm" type="text" name="target_id" placeholder="target_id">
+                    <input class="form-control form-control-sm" type="text" name="context_json" value="{}">
+                    <button class="btn btn-sm btn-outline-primary">Test</button>
+                  </form>
+                </div>
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-secondary">Brak policy dokumentow.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="surface-card p-3">
+  <h2 class="h5 mb-3">Ostatnie ewaluacje</h2>
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead><tr><th>Czas</th><th>Policy</th><th>Event</th><th>Decision</th><th>Message</th></tr></thead>
+      <tbody>
+        {% for row in evaluations %}
+        <tr>
+          <td>{{ row.created_at.strftime('%Y-%m-%d %H:%M:%S') if row.created_at else '-' }}</td>
+          <td>{{ row.policy.name if row.policy else '-' }}</td>
+          <td>{{ row.event_type }}</td>
+          <td>{{ row.decision }}</td>
+          <td>{{ row.message or '-' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="text-secondary">Brak ewaluacji policy.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

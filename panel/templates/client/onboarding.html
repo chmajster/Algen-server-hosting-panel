@@ -1,0 +1,92 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Onboarding</h1>
+  <span class="badge text-bg-light border">Postep: {{ percent }}% ({{ completed }}/{{ total }})</span>
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <div class="progress" role="progressbar" aria-valuenow="{{ percent }}" aria-valuemin="0" aria-valuemax="100" style="height: 10px;">
+    <div class="progress-bar" id="onboardingProgress" data-percent="{{ percent }}"></div>
+  </div>
+</div>
+
+<div class="surface-card p-3">
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Krok</th>
+          <th>Opis</th>
+          <th>Status</th>
+          <th>Akcje</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for step in steps %}
+        <tr>
+          <td>{{ step.title }}</td>
+          <td>{{ step.description }}</td>
+          <td>
+            {% if step.status == 'completed' %}
+            <span class="badge text-bg-success">completed{% if step.auto_done %} (verified){% endif %}</span>
+            {% elif step.status == 'failed' %}
+            <span class="badge text-bg-danger">failed</span>
+            {% else %}
+            <span class="badge text-bg-warning">pending</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="d-flex gap-2 flex-wrap">
+              {% if step.status != 'completed' %}
+              <form method="post" action="{{ url_for('client.onboarding') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="step_id" value="{{ step.id }}">
+                <input type="hidden" name="action" value="complete">
+                <button class="btn btn-sm btn-outline-success">Oznacz completed (po walidacji)</button>
+              </form>
+              {% else %}
+              <form method="post" action="{{ url_for('client.onboarding') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="step_id" value="{{ step.id }}">
+                <input type="hidden" name="action" value="undo">
+                <button class="btn btn-sm btn-outline-secondary">Cofnij completed</button>
+              </form>
+              {% endif %}
+
+              {% if step.status != 'failed' %}
+              <form method="post" action="{{ url_for('client.onboarding') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="step_id" value="{{ step.id }}">
+                <input type="hidden" name="action" value="fail">
+                <button class="btn btn-sm btn-outline-danger">Oznacz failed</button>
+              </form>
+              {% else %}
+              <form method="post" action="{{ url_for('client.onboarding') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="step_id" value="{{ step.id }}">
+                <input type="hidden" name="action" value="clear_fail">
+                <button class="btn btn-sm btn-outline-primary">Wyczysc failed</button>
+              </form>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-secondary">Brak krokow onboarding.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+<script>
+(() => {
+  const bar = document.getElementById("onboardingProgress");
+  if (!bar) {
+    return;
+  }
+  const percent = Number(bar.getAttribute("data-percent") || 0);
+  bar.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+})();
+</script>
+{% endblock %}

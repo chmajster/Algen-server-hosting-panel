@@ -1,0 +1,175 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Retention i privacy</h1>
+  <form method="post" action="{{ url_for('governance.retention_cleanup_run') }}" class="d-flex gap-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if selected_client %}
+    <input type="hidden" name="client_id" value="{{ selected_client.id }}">
+    {% endif %}
+    <input class="form-control form-control-sm" type="text" name="run_key" placeholder="manual-YYYYMMDDHHMM">
+    <button class="btn btn-sm btn-primary">Uruchom cleanup</button>
+  </form>
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <form method="get" class="row g-2 align-items-end">
+    <div class="col-12 col-md-6 col-lg-4">
+      <label class="form-label">Klient</label>
+      <select class="form-select" name="client_id" onchange="this.form.submit()">
+        {% for cid, label in clients %}
+        <option value="{{ cid }}" {% if selected_client and selected_client.id == cid %}selected{% endif %}>{{ label }} ({{ cid }})</option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+</div>
+
+{% if selected_client %}
+<div class="surface-card p-3 mb-3">
+  <h2 class="h5 mb-3">Polityki retencji klienta #{{ selected_client.id }}</h2>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Resource</th>
+          <th>Anonymize (dni)</th>
+          <th>Archive (dni)</th>
+          <th>Delete (dni)</th>
+          <th>Legal hold</th>
+          <th>Active</th>
+          <th>Notes</th>
+          <th>Akcja</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in resource_policies %}
+        <tr>
+          <form method="post" action="{{ url_for('governance.retention_policy_save') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="client_id" value="{{ selected_client.id }}">
+            <input type="hidden" name="resource_type" value="{{ item.resource_type }}">
+            <td>{{ item.resource_type }}</td>
+            <td><input class="form-control form-control-sm" type="number" min="0" name="anonymize_after_days" value="{{ item.anonymize_after_days if item.anonymize_after_days is not none else '' }}"></td>
+            <td><input class="form-control form-control-sm" type="number" min="0" name="archive_after_days" value="{{ item.archive_after_days if item.archive_after_days is not none else '' }}"></td>
+            <td><input class="form-control form-control-sm" type="number" min="0" name="delete_after_days" value="{{ item.delete_after_days if item.delete_after_days is not none else '' }}"></td>
+            <td>
+              <select class="form-select form-select-sm" name="legal_hold_enabled">
+                <option value="1" {% if item.legal_hold_enabled %}selected{% endif %}>on</option>
+                <option value="0" {% if not item.legal_hold_enabled %}selected{% endif %}>off</option>
+              </select>
+            </td>
+            <td>
+              <select class="form-select form-select-sm" name="is_active">
+                <option value="1" {% if item.is_active %}selected{% endif %}>on</option>
+                <option value="0" {% if not item.is_active %}selected{% endif %}>off</option>
+              </select>
+            </td>
+            <td><input class="form-control form-control-sm" type="text" name="notes" maxlength="255" value="{{ item.policy.notes if item.policy else '' }}"></td>
+            <td><button class="btn btn-sm btn-outline-primary">Zapisz</button></td>
+          </form>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-12 col-xl-6">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Legal hold</h2>
+      <form method="post" action="{{ url_for('governance.retention_hold_create') }}" class="row g-2 mb-3">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="col-12 col-md-6">
+          <label class="form-label">Klient (opcjonalnie)</label>
+          <select class="form-select" name="client_id">
+            <option value="0">GLOBAL</option>
+            {% for cid, label in clients %}
+            <option value="{{ cid }}" {% if selected_client and selected_client.id == cid %}selected{% endif %}>{{ label }} ({{ cid }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Resource</label>
+          <select class="form-select" name="resource_type">
+            {% for value, label in resources %}
+            <option value="{{ value }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Resource ID (opcjonalnie)</label>
+          <input class="form-control" type="text" name="resource_id" maxlength="120">
+        </div>
+        <div class="col-12 col-md-6">
+          <label class="form-label">Wygasa (YYYY-MM-DD)</label>
+          <input class="form-control" type="text" name="expires_at" placeholder="2026-12-31">
+        </div>
+        <div class="col-12">
+          <label class="form-label">Powod</label>
+          <input class="form-control" type="text" name="reason" maxlength="255" required>
+        </div>
+        <div class="col-12">
+          <button class="btn btn-outline-primary">Dodaj legal hold</button>
+        </div>
+      </form>
+
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead><tr><th>ID</th><th>Client</th><th>Resource</th><th>Status</th><th>Reason</th><th>Expires</th><th></th></tr></thead>
+          <tbody>
+            {% for hold in holds %}
+            <tr>
+              <td>#{{ hold.id }}</td>
+              <td>{{ hold.client.user.username if hold.client and hold.client.user else 'GLOBAL' }}</td>
+              <td>{{ hold.resource_type }}{% if hold.resource_id %}:{{ hold.resource_id }}{% endif %}</td>
+              <td>{{ hold.status }}</td>
+              <td>{{ hold.reason }}</td>
+              <td>{{ hold.expires_at.strftime('%Y-%m-%d') if hold.expires_at else '-' }}</td>
+              <td>
+                {% if hold.status == 'active' %}
+                <form method="post" action="{{ url_for('governance.retention_hold_release', hold_id=hold.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-sm btn-outline-danger">Release</button>
+                </form>
+                {% else %}
+                -
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-secondary">Brak legal hold.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Historia cleanup</h2>
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead><tr><th>ID</th><th>Run key</th><th>Status</th><th>Started</th><th>Finished</th></tr></thead>
+          <tbody>
+            {% for run in runs %}
+            <tr>
+              <td>#{{ run.id }}</td>
+              <td>{{ run.run_key or '-' }}</td>
+              <td>{{ run.status }}</td>
+              <td>{{ run.started_at.strftime('%Y-%m-%d %H:%M') if run.started_at else '-' }}</td>
+              <td>{{ run.finished_at.strftime('%Y-%m-%d %H:%M') if run.finished_at else '-' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-secondary">Brak uruchomien cleanup.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

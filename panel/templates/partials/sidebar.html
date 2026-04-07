@@ -30,6 +30,13 @@
     <a class="nav-link {% if request.endpoint in ['admin.anti_fraud', 'admin.anti_fraud_review', 'admin.anti_fraud_unlock'] %}active{% endif %}" href="{{ url_for('admin.anti_fraud') }}">Anti-fraud</a>
     <a class="nav-link {% if request.endpoint in ['admin.approvals', 'admin.approvals_approve', 'admin.approvals_reject'] %}active{% endif %}" href="{{ url_for('admin.approvals') }}">Akceptacje</a>
     <a class="nav-link {% if request.endpoint == 'admin.audit_integrity' %}active{% endif %}" href="{{ url_for('admin.audit_integrity') }}">Audit integrity</a>
+    <a class="nav-link {% if request.endpoint in ['governance.retention_index', 'governance.retention_policy_save', 'governance.retention_cleanup_run', 'governance.retention_hold_create', 'governance.retention_hold_release'] %}active{% endif %}" href="{{ url_for('governance.retention_index') }}">Retention</a>
+    <a class="nav-link {% if request.endpoint in ['governance.secrets_index', 'governance.secrets_create', 'governance.secrets_rotate', 'governance.secrets_reveal', 'governance.secrets_rotation_run'] %}active{% endif %}" href="{{ url_for('governance.secrets_index') }}">Secrets vault</a>
+    <a class="nav-link {% if request.endpoint in ['governance.events_index', 'governance.events_stream'] %}active{% endif %}" href="{{ url_for('governance.events_index') }}">Event stream</a>
+    <a class="nav-link {% if request.endpoint in ['governance.compliance_index', 'governance.compliance_run', 'governance.compliance_checklist_save', 'governance.compliance_checklist_evidence_link'] %}active{% endif %}" href="{{ url_for('governance.compliance_index') }}">Compliance</a>
+    <a class="nav-link {% if request.endpoint in ['governance.policies_index', 'governance.policies_create', 'governance.policies_toggle', 'governance.policies_activate', 'governance.policies_archive', 'governance.policies_rollback', 'governance.policies_test'] %}active{% endif %}" href="{{ url_for('governance.policies_index') }}">Policy-as-code</a>
+    <a class="nav-link {% if request.endpoint in ['governance.onboarding_index'] %}active{% endif %}" href="{{ url_for('governance.onboarding_index') }}">Onboarding</a>
+    <a class="nav-link {% if request.endpoint in ['governance.dr_index', 'governance.dr_profile_save', 'governance.dr_run', 'governance.dr_failover_test'] %}active{% endif %}" href="{{ url_for('governance.dr_index') }}">DR readiness</a>
     <a class="nav-link {% if request.endpoint == 'admin.settings' %}active{% endif %}" href="{{ url_for('admin.settings') }}">Ustawienia</a>
       {% if config.TWO_FACTOR_AVAILABLE %}
         <a class="nav-link {% if request.endpoint == 'auth.two_factor_settings' %}active{% endif %}" href="{{ url_for('auth.two_factor_settings') }}">2FA</a>
@@ -37,6 +44,7 @@
       <a class="nav-link {% if request.endpoint in ['auth.sessions_overview', 'auth.revoke_user_session', 'auth.logout_all_sessions'] %}active{% endif %}" href="{{ url_for('auth.sessions_overview') }}">Sesje</a>
   {% else %}
     <a class="nav-link {% if request.endpoint == 'client.dashboard' %}active{% endif %}" href="{{ url_for('client.dashboard') }}">Dashboard</a>
+    <a class="nav-link {% if request.endpoint == 'client.onboarding' %}active{% endif %}" href="{{ url_for('client.onboarding') }}">Onboarding</a>
     <a class="nav-link {% if request.endpoint in ['tickets.client_tickets', 'tickets.client_ticket_create', 'tickets.client_ticket_view'] %}active{% endif %}" href="{{ url_for('tickets.client_tickets') }}">Tickety</a>
     <a class="nav-link {% if request.endpoint == 'billing.client_billing' %}active{% endif %}" href="{{ url_for('billing.client_billing') }}">Billing</a>
     <a class="nav-link {% if request.endpoint in ['client.api_tokens', 'client.api_token_revoke'] %}active{% endif %}" href="{{ url_for('client.api_tokens') }}">API tokeny</a>
@@ -51,6 +59,7 @@
     <a class="nav-link {% if request.endpoint == 'backups.client_backups' %}active{% endif %}" href="{{ url_for('backups.client_backups') }}">Backupy</a>
     <a class="nav-link {% if request.endpoint == 'status.client_status_page' %}active{% endif %}" href="{{ url_for('status.client_status_page') }}">Status page</a>
     <a class="nav-link {% if request.endpoint == 'monitoring.client_usage' %}active{% endif %}" href="{{ url_for('monitoring.client_usage') }}">Monitoring</a>
+    <a class="nav-link {% if request.endpoint in ['client.events', 'client.events_stream'] %}active{% endif %}" href="{{ url_for('client.events') }}">Zdarzenia</a>
     <a class="nav-link {% if request.endpoint == 'files.manager' %}active{% endif %}" href="{{ url_for('files.manager') }}">Pliki</a>
     <a class="nav-link {% if request.endpoint in ['client.migrations', 'client.migration_cancel'] %}active{% endif %}" href="{{ url_for('client.migrations') }}">Migracje</a>
       {% if config.TWO_FACTOR_AVAILABLE %}

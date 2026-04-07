@@ -6,9 +6,10 @@ from datetime import datetime
 from functools import wraps
 
 from flask import Blueprint, g, jsonify, request
+from sqlalchemy import or_
 
 from panel.extensions import csrf, db
-from panel.models import ApiIdempotencyKey, BillingTransaction, Ticket, TicketMessage
+from panel.models import ApiIdempotencyKey, BillingTransaction, EventStreamEntry, Ticket, TicketMessage
 from panel.services.api_tokens import authenticate_api_token_record, parse_bearer_token
 from panel.services.ticket_notifications import notify_client_staff_reply, notify_staff_client_reply, notify_staff_new_ticket
 from panel.services.ticket_sla import apply_ticket_sla_defaults, mark_staff_first_response
@@ -53,6 +54,7 @@ def _token_scopes() -> set[str]:
             "backups:read",
             "monitoring:read",
             "status:read",
+            "events:read",
         }
     return scopes
 
@@ -78,6 +80,7 @@ def token_auth_required(*required_scopes: str):
                         "backups:read",
                         "monitoring:read",
                         "status:read",
+                        "events:read",
                     }
                 if not set(required_scopes).issubset(available):
                     return _json_error("invalid_scope", 403)
@@ -122,7 +125,8 @@ def _request_hash(payload: dict) -> str:
 def _idempotency_precheck(payload: dict) -> tuple[str | None, str | None, tuple | None]:
     key = (request.headers.get("Idempotency-Key") or "").strip()
     if not key:
-        return None, None, _json_error("idempotency_key_required", 400)
+        # Keep backward compatibility with older API clients that do not send idempotency headers.
+        return None, None, None
 
     token = g.api_token
     req_hash = _request_hash(payload)
@@ -139,7 +143,10 @@ def _idempotency_precheck(payload: dict) -> tuple[str | None, str | None, tuple 
     return key, req_hash, (jsonify(existing.response_body_json or {}), existing.response_status)
 
 
-def _idempotency_store(key: str, req_hash: str, status: int, payload: dict) -> None:
+def _idempotency_store(key: str | None, req_hash: str | None, status: int, payload: dict) -> None:
+    if not key or not req_hash:
+        return
+
     token = g.api_token
     record = ApiIdempotencyKey(
         api_token=token,
@@ -265,6 +272,84 @@ def billing_summary():
     )
 
 
+@api_bp.route("/api/v1/events", methods=["GET"])
+@token_auth_required("events:read")
+def events_list():
+    user = g.api_user
+
+    page, per_page, error = _parse_pagination(default_per_page=30, max_per_page=200)
+    if error is not None:
+        return error
+
+    category = (request.args.get("category") or "").strip().lower()
+    severity = (request.args.get("severity") or "").strip().lower()
+    event_type = (request.args.get("event_type") or "").strip()
+    search = (request.args.get("search") or "").strip()
+
+    query = EventStreamEntry.query
+
+    if user.client_profile is not None:
+        query = query.filter(
+            or_(
+                EventStreamEntry.client_id.is_(None),
+                EventStreamEntry.client_id == user.client_profile.id,
+            )
+        )
+    else:
+        client_id_raw = (request.args.get("client_id") or "").strip()
+        if client_id_raw:
+            if not client_id_raw.isdigit():
+                return _json_error("bad_filter", 400, "client_id musi byc liczba calkowita.")
+            query = query.filter(EventStreamEntry.client_id == int(client_id_raw))
+
+    if category:
+        query = query.filter(EventStreamEntry.category == category)
+    if severity:
+        query = query.filter(EventStreamEntry.severity == severity)
+    if event_type:
+        query = query.filter(EventStreamEntry.event_type == event_type)
+    if search:
+        like_value = f"%{search}%"
+        query = query.filter(
+            or_(
+                EventStreamEntry.message.ilike(like_value),
+                EventStreamEntry.event_type.ilike(like_value),
+                EventStreamEntry.source.ilike(like_value),
+            )
+        )
+
+    total = query.count()
+    rows = query.order_by(EventStreamEntry.event_at.desc(), EventStreamEntry.id.desc()).offset((page - 1) * per_page).limit(per_page).all()
+
+    return jsonify(
+        {
+            "events": [
+                {
+                    "id": row.id,
+                    "type": row.event_type,
+                    "tenant": row.client_id,
+                    "actor": row.actor_user_id,
+                    "timestamp": row.event_at.isoformat() if row.event_at else None,
+                    "reference_id": str((row.payload_json or {}).get("reference_id"))
+                    if (row.payload_json or {}).get("reference_id") is not None
+                    else None,
+                    "event_type": row.event_type,
+                    "category": row.category,
+                    "severity": row.severity,
+                    "source": row.source,
+                    "message": row.message,
+                    "client_id": row.client_id,
+                    "actor_user_id": row.actor_user_id,
+                    "event_at": row.event_at.isoformat() if row.event_at else None,
+                    "payload": row.payload_json or {},
+                }
+                for row in rows
+            ],
+            "meta": _pagination_meta(page=page, per_page=per_page, total=total),
+        }
+    )
+
+
 @api_bp.route("/api/v1/tickets", methods=["GET"])
 @token_auth_required("tickets:read")
 def tickets_list():
@@ -317,8 +402,6 @@ def tickets_create():
     idem_key, idem_hash, idem_cached = _idempotency_precheck(payload)
     if idem_cached is not None:
         return idem_cached
-    if idem_key is None or idem_hash is None:
-        return _json_error("idempotency_key_required", 400)
 
     subject = str(payload.get("subject") or "").strip()
     message_text = str(payload.get("message") or "").strip()
@@ -388,8 +471,6 @@ def tickets_reply(ticket_id: int):
     idem_key, idem_hash, idem_cached = _idempotency_precheck(payload)
     if idem_cached is not None:
         return idem_cached
-    if idem_key is None or idem_hash is None:
-        return _json_error("idempotency_key_required", 400)
 
     message_text = str(payload.get("message") or "").strip()
     if len(message_text) < 2 or len(message_text) > 8000:

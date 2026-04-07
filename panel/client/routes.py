@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
+from flask import Blueprint, Response, abort, flash, redirect, render_template, request, stream_with_context, url_for
 from flask_login import current_user, login_required
 
 from panel.extensions import db
@@ -13,7 +13,9 @@ from panel.services.api_tokens import API_TOKEN_SCOPES, issue_api_token, normali
 from panel.services.audit import log_activity
 from panel.services.billing import financial_enforcement_snapshot
 from panel.services.automations import execute_automation_rules
+from panel.services.event_stream import EVENT_CATEGORIES, EVENT_SEVERITIES, iter_sse_events, query_events
 from panel.services.migrations import cancel_migration_job, create_migration_job
+from panel.services.onboarding import compute_onboarding_view, update_onboarding_step
 from panel.utils.decorators import active_account_required, roles_required
 from panel.utils.query import current_client
 
@@ -194,3 +196,109 @@ def migration_cancel(job_id: int):
         flash("Tej migracji nie mozna juz anulowac.", "warning")
 
     return redirect(url_for("client.migrations"))
+
+
+@client_bp.route("/onboarding", methods=["GET", "POST"])
+@login_required
+@roles_required("client")
+@active_account_required
+def onboarding():
+    client = current_client()
+
+    if request.method == "POST":
+        step_id = (request.form.get("step_id") or "").strip()
+        action = (request.form.get("action") or "").strip().lower()
+        try:
+            update_onboarding_step(client=client, step_id=step_id, action=action, actor=current_user)
+            log_activity(
+                "client.onboarding_step_update",
+                "client_onboarding_state",
+                "Klient zaktualizowal krok onboarding",
+                entity_id=client.id,
+                client=client,
+                actor=current_user,
+                metadata={"step_id": step_id, "action": action},
+            )
+            db.session.commit()
+            flash("Krok onboarding zaktualizowany.", "success")
+        except Exception as exc:
+            db.session.rollback()
+            flash(f"Nie udalo sie zaktualizowac kroku onboarding: {exc}", "danger")
+
+    view = compute_onboarding_view(client)
+    db.session.commit()
+    return render_template(
+        "client/onboarding.html",
+        title="Onboarding",
+        client=client,
+        steps=view["steps"],
+        percent=view["percent"],
+        completed=view["completed"],
+        total=view["total"],
+    )
+
+
+@client_bp.route("/events")
+@login_required
+@roles_required("client")
+@active_account_required
+def events():
+    client = current_client()
+    category = (request.args.get("category") or "").strip().lower() or None
+    severity = (request.args.get("severity") or "").strip().lower() or None
+    event_type = (request.args.get("event_type") or "").strip() or None
+    search = (request.args.get("search") or "").strip() or None
+
+    rows = query_events(
+        client_id=client.id,
+        category=category,
+        severity=severity,
+        event_type=event_type,
+        search=search,
+        limit=200,
+    )
+    return render_template(
+        "client/events.html",
+        title="Zdarzenia",
+        rows=rows,
+        category=category,
+        severity=severity,
+        event_type=event_type,
+        search=search,
+        categories=sorted(EVENT_CATEGORIES),
+        severities=sorted(EVENT_SEVERITIES),
+    )
+
+
+@client_bp.route("/events/stream")
+@login_required
+@roles_required("client")
+@active_account_required
+def events_stream():
+    client = current_client()
+    category = (request.args.get("category") or "").strip().lower() or None
+    severity = (request.args.get("severity") or "").strip().lower() or None
+    event_type = (request.args.get("event_type") or "").strip() or None
+    search = (request.args.get("search") or "").strip() or None
+    last_id_raw = (request.args.get("last_id") or "0").strip()
+    try:
+        last_id = int(last_id_raw)
+    except ValueError:
+        last_id = 0
+
+    def generate():
+        yield from iter_sse_events(
+            last_id=last_id,
+            client_id=client.id,
+            category=category,
+            severity=severity,
+            event_type=event_type,
+            search=search,
+            max_cycles=30,
+            poll_seconds=1.0,
+        )
+
+    response = Response(stream_with_context(generate()), mimetype="text/event-stream")
+    response.headers["Cache-Control"] = "no-cache"
+    response.headers["X-Accel-Buffering"] = "no"
+    return response

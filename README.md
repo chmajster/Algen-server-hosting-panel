@@ -19,9 +19,49 @@ Installer został przebudowany tak, aby używał systemowego Pythona z repozytor
 - 1 kontener Docker z Apache per klient, z automatyczna synchronizacja VirtualHostow
 - webowy menedżer plików dla klienta z separacją per klient
 - monitoring usług i metryki serwera
+- polityki retencji i privacy per tenant (z legal hold i cleanup run history)
+- secrets vault z wersjonowaniem, szyfrowaniem at-rest i rotacja
+- near-real-time event stream (admin + tenant) oraz eksport event/compliance
+- compliance center i policy-as-code dla krytycznych akcji operacyjnych
+- onboarding wizard klienta oraz panel DR readiness (RPO/RTO, region coverage)
 - bezpieczny helper do zarządzania `/etc/hosts` przez `sudo`
 - generowanie i odnawianie certyfikatów SSL dla domen i subdomen
 - wdrożenie przez `install.sh`, Gunicorn, systemd i opcjonalny nginx
+
+## Operacje governance (retencja / compliance / DR / vault)
+
+Nowe moduly governance uruchamiane sa przez istniejace komendy CLI Flask.
+
+Wymagane / zalecane zmienne `.env`:
+
+```env
+SECRETS_VAULT_KEY=change-this-vault-key
+APPROVALS_ENABLED=true
+APPROVALS_RISKY_ACTIONS=domains.delete,backups.restore
+APPROVALS_REQUIRED_COUNTS=domains.delete=1,backups.restore=1
+```
+
+Przykladowe zadania harmonogramu (cron/systemd timer), uruchamiane z katalogu aplikacji i aktywnym `.venv`:
+
+```bash
+flask --app wsgi:app run-retention-cleanup --run-key "daily-$(date +%Y%m%d)"
+flask --app wsgi:app run-secret-rotation-scan
+flask --app wsgi:app run-compliance-checks
+flask --app wsgi:app run-dr-checks
+```
+
+Opcjonalny, bezpieczny test failover (symulacja) dla konkretnego tenanta:
+
+```bash
+flask --app wsgi:app run-dr-failover-test --client-id 1
+```
+
+Uwagi operacyjne:
+
+- cleanup retencji jest idempotentny po `run_key`;
+- vault sekrety pozwalaja na jednorazowe ujawnienie plaintext per wersja sekretu;
+- event stream redaguje wrazliwe pola (`password`, `token`, `secret`, itd.);
+- compliance center ma checklist controls z ownerem, due date i tenant-scoped evidence links.
 
 ## Szybki start developerski
 

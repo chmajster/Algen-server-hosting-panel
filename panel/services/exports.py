@@ -6,7 +6,18 @@ from decimal import Decimal
 from io import BytesIO, StringIO
 
 from panel.extensions import db
-from panel.models import BillingCycle, Client, ClientResourceSample, ClientService, ExportJob, Ticket
+from panel.models import (
+    BillingCycle,
+    Client,
+    ClientResourceSample,
+    ClientService,
+    ComplianceChecklistItem,
+    ComplianceResult,
+    DisasterRecoveryCheckRun,
+    EventStreamEntry,
+    ExportJob,
+    Ticket,
+)
 
 
 def _normalize_cell(value):
@@ -236,6 +247,163 @@ def dataset_resource_usage(*, client_id: int | None = None, limit: int = 5000) -
                 sample.database_count,
                 sample.mailbox_count,
                 sample.created_at,
+            ]
+        )
+    return headers, rows
+
+
+def dataset_compliance(*, client_id: int | None = None, limit: int = 5000) -> tuple[list[str], list[list]]:
+    query = ComplianceResult.query
+    if client_id:
+        query = query.filter_by(client_id=client_id)
+
+    rows_raw = query.order_by(ComplianceResult.created_at.desc()).limit(max(1, limit)).all()
+    headers = [
+        "result_id",
+        "run_id",
+        "client_id",
+        "client",
+        "check_code",
+        "status",
+        "severity",
+        "score",
+        "message",
+        "evidence_ref",
+        "created_at",
+    ]
+    rows: list[list] = []
+    for item in rows_raw:
+        rows.append(
+            [
+                item.id,
+                item.run_id,
+                item.client_id,
+                item.client.user.username if item.client and item.client.user else "",
+                item.check_code,
+                item.status,
+                item.severity,
+                item.score,
+                item.message,
+                item.evidence_ref,
+                item.created_at,
+            ]
+        )
+    return headers, rows
+
+
+def dataset_compliance_controls(*, client_id: int | None = None, limit: int = 5000) -> tuple[list[str], list[list]]:
+    query = ComplianceChecklistItem.query
+    if client_id:
+        query = query.filter_by(client_id=client_id)
+
+    rows_raw = query.order_by(ComplianceChecklistItem.updated_at.desc(), ComplianceChecklistItem.id.desc()).limit(max(1, limit)).all()
+    headers = [
+        "control_id",
+        "client_id",
+        "client",
+        "control_code",
+        "title",
+        "status",
+        "owner",
+        "due_date",
+        "evidence_count",
+        "updated_at",
+    ]
+    rows: list[list] = []
+    for item in rows_raw:
+        rows.append(
+            [
+                item.id,
+                item.client_id,
+                item.client.user.username if item.client and item.client.user else "",
+                item.control_code,
+                item.title,
+                item.status,
+                item.owner.username if item.owner else "",
+                item.due_date,
+                len(item.evidence_links),
+                item.updated_at,
+            ]
+        )
+    return headers, rows
+
+
+def dataset_dr_readiness(*, client_id: int | None = None, limit: int = 5000) -> tuple[list[str], list[list]]:
+    query = DisasterRecoveryCheckRun.query
+    if client_id:
+        query = query.filter_by(client_id=client_id)
+
+    rows_raw = query.order_by(DisasterRecoveryCheckRun.checked_at.desc(), DisasterRecoveryCheckRun.id.desc()).limit(max(1, limit)).all()
+    headers = [
+        "run_id",
+        "client_id",
+        "client",
+        "status",
+        "score",
+        "rpo_minutes",
+        "rto_minutes",
+        "replication_status",
+        "last_sync_at",
+        "run_type",
+        "checked_at",
+        "message",
+    ]
+    rows: list[list] = []
+    for item in rows_raw:
+        details_json = dict(item.details_json or {})
+        rows.append(
+            [
+                item.id,
+                item.client_id,
+                item.client.user.username if item.client and item.client.user else "",
+                item.status,
+                item.score,
+                item.rpo_minutes,
+                item.rto_minutes,
+                details_json.get("replication_status"),
+                details_json.get("last_sync_at"),
+                details_json.get("run_type", "readiness_check"),
+                item.checked_at,
+                item.message,
+            ]
+        )
+    return headers, rows
+
+
+def dataset_events(*, client_id: int | None = None, limit: int = 5000) -> tuple[list[str], list[list]]:
+    query = EventStreamEntry.query
+    if client_id:
+        query = query.filter_by(client_id=client_id)
+
+    rows_raw = query.order_by(EventStreamEntry.event_at.desc(), EventStreamEntry.id.desc()).limit(max(1, limit)).all()
+    headers = [
+        "event_id",
+        "event_type",
+        "category",
+        "severity",
+        "source",
+        "message",
+        "client_id",
+        "client",
+        "actor_user_id",
+        "event_at",
+        "created_at",
+    ]
+    rows: list[list] = []
+    for item in rows_raw:
+        rows.append(
+            [
+                item.id,
+                item.event_type,
+                item.category,
+                item.severity,
+                item.source,
+                item.message,
+                item.client_id,
+                item.client.user.username if item.client and item.client.user else "",
+                item.actor_user_id,
+                item.event_at,
+                item.created_at,
             ]
         )
     return headers, rows

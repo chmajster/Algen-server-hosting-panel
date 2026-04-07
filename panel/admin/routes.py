@@ -47,7 +47,11 @@ from panel.services.automations import execute_automation_rules, parse_json_text
 from panel.services.bulk_operations import bulk_lock_user_accounts, bulk_update_client_limits
 from panel.services.exports import (
     create_export_job,
+    dataset_compliance,
+    dataset_compliance_controls,
     dataset_clients,
+    dataset_dr_readiness,
+    dataset_events,
     dataset_invoices,
     dataset_resource_usage,
     dataset_tickets,
@@ -429,6 +433,34 @@ def export_dataset(dataset_key: str):
                 client_id = int(client_id_raw)
             filters["client_id"] = client_id
             headers, rows = dataset_resource_usage(client_id=client_id, limit=limit)
+        elif dataset == "compliance":
+            client_id = None
+            client_id_raw = (request.args.get("client_id") or "").strip()
+            if client_id_raw.isdigit():
+                client_id = int(client_id_raw)
+            filters["client_id"] = client_id
+            headers, rows = dataset_compliance(client_id=client_id, limit=limit)
+        elif dataset == "compliance_controls":
+            client_id = None
+            client_id_raw = (request.args.get("client_id") or "").strip()
+            if client_id_raw.isdigit():
+                client_id = int(client_id_raw)
+            filters["client_id"] = client_id
+            headers, rows = dataset_compliance_controls(client_id=client_id, limit=limit)
+        elif dataset == "events":
+            client_id = None
+            client_id_raw = (request.args.get("client_id") or "").strip()
+            if client_id_raw.isdigit():
+                client_id = int(client_id_raw)
+            filters["client_id"] = client_id
+            headers, rows = dataset_events(client_id=client_id, limit=limit)
+        elif dataset == "dr_readiness":
+            client_id = None
+            client_id_raw = (request.args.get("client_id") or "").strip()
+            if client_id_raw.isdigit():
+                client_id = int(client_id_raw)
+            filters["client_id"] = client_id
+            headers, rows = dataset_dr_readiness(client_id=client_id, limit=limit)
         else:
             flash("Nieznany dataset eksportu.", "danger")
             return redirect(url_for("admin.exports_index"))

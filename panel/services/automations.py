@@ -123,6 +123,22 @@ def execute_automation_rules(
         duplicate = AutomationExecution.query.filter_by(rule_id=rule.id, event_fingerprint=fingerprint).first()
         if duplicate is not None:
             skipped += 1
+            try:
+                from panel.services.event_stream import emit_event
+
+                emit_event(
+                    event_type="automation.execution_skipped",
+                    message=f"Automation rule {rule.name} skipped (duplicate)",
+                    category="automation",
+                    severity="debug",
+                    source="automation",
+                    client=client,
+                    actor=actor,
+                    payload={"rule_id": rule.id, "trigger_event": event, "fingerprint": fingerprint},
+                    fingerprint=fingerprint,
+                )
+            except Exception:
+                pass
             continue
 
         execution = AutomationExecution(
@@ -152,6 +168,28 @@ def execute_automation_rules(
             metadata["finished_at"] = datetime.utcnow().isoformat()
             execution.metadata_json = metadata
             failed += 1
+
+        try:
+            from panel.services.event_stream import emit_event
+
+            emit_event(
+                event_type="automation.execution",
+                message=f"Automation rule {rule.name}: {execution.status}",
+                category="automation",
+                severity="info" if execution.status == "success" else "warning",
+                source="automation",
+                client=client,
+                actor=actor,
+                payload={
+                    "rule_id": rule.id,
+                    "trigger_event": event,
+                    "status": execution.status,
+                    "message": execution.message,
+                },
+                fingerprint=fingerprint,
+            )
+        except Exception:
+            pass
 
         if rule.stop_on_match:
             break

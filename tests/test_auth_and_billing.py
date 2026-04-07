@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import base64
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 import io
 from pathlib import Path
+
+import pytest
 
 from panel.extensions import db
 from panel.models import (
@@ -16,10 +18,17 @@ from panel.models import (
     BillingCycle,
     BillingTransaction,
     BulkOperation,
+    ClientOnboardingState,
     Client,
     ClientService,
     ClientSSHKey,
+    ComplianceResult,
+    ComplianceRun,
+    DataLegalHold,
+    DisasterRecoveryCheckRun,
+    DisasterRecoveryProfile,
     DomainRegistration,
+    EventStreamEntry,
     ExportJob,
     ApiToken,
     Backup,
@@ -32,12 +41,16 @@ from panel.models import (
     OnlinePayment,
     OperatorPermission,
     OverdueReminder,
+    PolicyDocument,
+    PolicyEvaluation,
     RegistrationFraudCheck,
+    RetentionCleanupRun,
     Role,
     SSLCertificate,
     ServicePlan,
     Subdomain,
     SystemSetting,
+    TenantRetentionPolicy,
     Ticket,
     TicketAttachment,
     TicketMacro,
@@ -46,6 +59,7 @@ from panel.models import (
     TwoFactorBackupCode,
     User,
     UserSession,
+    VaultSecretVersion,
     WebhookDelivery,
     WebhookEndpoint,
 )
@@ -56,7 +70,12 @@ from panel.services.audit import log_activity, verify_activity_chain
 from panel.services.client_apache import client_apache_resource_limits
 from panel.services.api_tokens import issue_api_token
 from panel.services.billing import adjust_balance, update_client_financial_status_for_date
+from panel.services.compliance import link_checklist_evidence, run_compliance_checks, upsert_checklist_item
+from panel.services.dr_readiness import run_dr_readiness_checks, run_failover_simulation
 from panel.services.operator_permissions import domain_choices
+from panel.services.policy_engine import activate_policy, rollback_policy
+from panel.services.retention import create_legal_hold, run_retention_cleanup, upsert_client_policy
+from panel.services.secrets_vault import create_secret, reveal_secret_value, rotate_secret
 from panel.services.two_factor import current_totp, generate_two_factor_secret
 
 
@@ -2720,3 +2739,425 @@ def test_client_billing_page_shows_financial_state(client):
     body = response.get_data(as_text=True)
     assert response.status_code == 200
     assert "Stan egzekucji finansowej" in body
+
+
+def test_retention_cleanup_respects_legal_hold_and_run_key(app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+
+        upsert_client_policy(
+            client_id=client_profile.id,
+            resource_type="event_stream_entries",
+            anonymize_after_days=0,
+            delete_after_days=0,
+            legal_hold_enabled=True,
+            is_active=True,
+            notes="pytest retention",
+        )
+
+        entry = EventStreamEntry(
+            client=client_profile,
+            event_type="pytest.retention",
+            category="system",
+            severity="info",
+            source="pytest",
+            message="Retention candidate",
+            event_at=datetime.utcnow() - timedelta(days=3),
+            payload_json={"sample": True},
+        )
+        db.session.add(entry)
+        db.session.flush()
+        entry_id = entry.id
+
+        hold = create_legal_hold(
+            client_id=client_profile.id,
+            resource_type="event_stream_entries",
+            resource_id=str(entry_id),
+            reason="pytest hold",
+            created_by=None,
+            expires_at=None,
+        )
+        db.session.flush()
+        hold_id = hold.id
+        db.session.commit()
+
+        first = run_retention_cleanup(run_key="pytest-retention-a", triggered_by=None, client_id=client_profile.id)
+        db.session.commit()
+        assert first["idempotent"] is False
+        assert EventStreamEntry.query.get(entry_id) is not None
+
+        hold = DataLegalHold.query.get(hold_id)
+        assert hold is not None
+        hold.status = "released"
+        hold.released_at = datetime.utcnow()
+        db.session.commit()
+
+        second = run_retention_cleanup(run_key="pytest-retention-b", triggered_by=None, client_id=client_profile.id)
+        db.session.commit()
+        assert second["idempotent"] is False
+        assert EventStreamEntry.query.get(entry_id) is None
+
+        third = run_retention_cleanup(run_key="pytest-retention-b", triggered_by=None, client_id=client_profile.id)
+        assert third["idempotent"] is True
+
+
+def test_secrets_vault_create_rotate_and_reveal(app):
+    pytest.importorskip("cryptography")
+
+    with app.app_context():
+        client_profile = Client.query.first()
+        admin = User.query.filter_by(username="admin").first()
+        assert client_profile is not None
+        assert admin is not None
+
+        secret = create_secret(
+            client=client_profile,
+            name="pytest-secret",
+            secret_type="api_key",
+            plain_value="initial-value-123",
+            created_by=admin,
+            rotation_interval_days=30,
+            description="pytest secret",
+        )
+        db.session.commit()
+
+        current_version = VaultSecretVersion.query.filter_by(secret_id=secret.id, is_current=True).first()
+        assert current_version is not None
+        assert "initial-value-123" not in current_version.value_encrypted
+
+        revealed = reveal_secret_value(secret, revealed_by=admin)
+        assert revealed == "initial-value-123"
+
+        with pytest.raises(ValueError):
+            reveal_secret_value(secret, revealed_by=admin)
+
+        rotate_secret(secret=secret, plain_value="rotated-value-456", rotated_by=admin, reason="pytest-rotation")
+        db.session.commit()
+
+        revealed_after_rotate = reveal_secret_value(secret, revealed_by=admin)
+        assert revealed_after_rotate == "rotated-value-456"
+
+
+def test_activity_log_emits_event_stream_entry(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        assert admin is not None
+
+        log_activity(
+            "test.event_stream_emit",
+            "test_entity",
+            "Seed event stream from audit log",
+            actor=admin,
+        )
+        db.session.commit()
+
+        row = (
+            EventStreamEntry.query.filter_by(event_type="activity.test.event_stream_emit")
+            .order_by(EventStreamEntry.id.desc())
+            .first()
+        )
+        assert row is not None
+        assert row.category == "system"
+
+
+def test_policy_blocks_domain_delete_when_enforced(client, app):
+    app.config["APPROVALS_ENABLED"] = True
+    app.config["APPROVALS_RISKY_ACTIONS"] = "domains.delete"
+    app.config["APPROVALS_REQUIRED_COUNTS"] = "domains.delete=1"
+
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+
+        policy = PolicyDocument(
+            name="Block domains delete without approval",
+            scope="tenant",
+            client=client_profile,
+            version="v1",
+            enforcement_mode="enforce",
+            is_active=True,
+            definition_json={
+                "rules": [
+                    {
+                        "event": "domains.delete.request",
+                        "when": {
+                            "all": [
+                                {"field": "requires_approval", "operator": "eq", "value": True},
+                                {"field": "approval_granted", "operator": "eq", "value": False},
+                            ]
+                        },
+                        "effect": "deny",
+                        "message": "Delete blocked until approval granted",
+                    }
+                ]
+            },
+        )
+
+        domain = Domain(
+            client=client_profile,
+            name="policy-delete-block.example.test",
+            document_root="/var/www/policy-delete-block",
+            php_version="8.3",
+            status="active",
+            is_primary=False,
+        )
+        db.session.add_all([policy, domain])
+        db.session.commit()
+        domain_id = domain.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        f"/admin/domains/{domain_id}/delete",
+        data={},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "zablokowane przez policy" in response.get_data(as_text=True)
+
+    with app.app_context():
+        assert Domain.query.get(domain_id) is not None
+        evaluation = (
+            PolicyEvaluation.query.filter_by(event_type="domains.delete.request", decision="deny")
+            .order_by(PolicyEvaluation.id.desc())
+            .first()
+        )
+        assert evaluation is not None
+
+
+def test_client_onboarding_page_and_step_update(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+
+        domain = Domain(
+            client=client_profile,
+            name="onboarding-step.example.test",
+            document_root="/var/www/onboarding-step",
+            php_version="8.3",
+            status="active",
+            is_primary=False,
+        )
+        db.session.add(domain)
+        db.session.commit()
+
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+
+    page = client.get("/client/onboarding")
+    assert page.status_code == 200
+    assert "Onboarding" in page.get_data(as_text=True)
+
+    update = client.post(
+        "/client/onboarding",
+        data={"step_id": "connect_domain", "action": "complete"},
+        follow_redirects=True,
+    )
+    assert update.status_code == 200
+
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+        state = ClientOnboardingState.query.filter_by(client_id=client_profile.id).first()
+        assert state is not None
+        assert "connect_domain" in (state.completed_steps_json or [])
+
+
+def test_compliance_and_dr_checks_create_records(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        assert admin is not None
+
+        run = run_compliance_checks(actor=admin, client_id=None)
+        summary = run_dr_readiness_checks(actor=admin, client_id=None)
+        db.session.commit()
+
+        assert ComplianceRun.query.get(run.id) is not None
+        assert ComplianceResult.query.filter_by(run_id=run.id).count() >= 1
+        assert summary["clients"] >= 1
+        assert DisasterRecoveryCheckRun.query.count() >= 1
+
+
+def test_dr_failover_simulation_creates_run(app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        admin = User.query.filter_by(username="admin").first()
+        assert client_profile is not None
+        assert admin is not None
+
+        summary = run_failover_simulation(client=client_profile, actor=admin, safe_mode=True)
+        db.session.commit()
+
+        assert summary["safe_mode"] is True
+        assert summary["result"] in {"passed", "failed"}
+        row = DisasterRecoveryCheckRun.query.get(summary["run_id"])
+        assert row is not None
+        details = dict(row.details_json or {})
+        assert details.get("run_type") == "failover_simulation"
+
+
+def test_api_events_endpoint_with_events_scope(client, app):
+    with app.app_context():
+        user = User.query.filter_by(username="client").first()
+        assert user is not None
+        token, plain_token = issue_api_token(user=user, name="Events API", scopes=["events:read"])
+        db.session.add(token)
+
+        log_activity(
+            "test.api.events",
+            "test_entity",
+            "Seed API events endpoint",
+            actor=user,
+            client=user.client_profile,
+        )
+        db.session.commit()
+
+    response = client.get(
+        "/api/v1/events",
+        headers={"Authorization": f"Bearer {plain_token}"},
+    )
+    assert response.status_code == 200
+    payload = response.get_json()
+    assert isinstance(payload.get("events"), list)
+    assert len(payload["events"]) >= 1
+
+
+def test_policy_lifecycle_activate_and_rollback(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        client_profile = Client.query.first()
+        assert admin is not None
+        assert client_profile is not None
+
+        p1 = PolicyDocument(
+            name="Lifecycle Policy A",
+            scope="tenant",
+            client=client_profile,
+            version="v1",
+            enforcement_mode="enforce",
+            is_active=False,
+            definition_json={
+                "rules": [
+                    {
+                        "event": "domains.delete.request",
+                        "effect": "deny",
+                        "message": "A",
+                    }
+                ]
+            },
+            created_by=admin,
+            updated_by=admin,
+        )
+        p2 = PolicyDocument(
+            name="Lifecycle Policy B",
+            scope="tenant",
+            client=client_profile,
+            version="v2",
+            enforcement_mode="enforce",
+            is_active=False,
+            definition_json={
+                "rules": [
+                    {
+                        "event": "domains.delete.request",
+                        "effect": "deny",
+                        "message": "B",
+                    }
+                ]
+            },
+            created_by=admin,
+            updated_by=admin,
+        )
+        db.session.add_all([p1, p2])
+        db.session.flush()
+
+        activate_policy(p1, actor=admin)
+        assert p1.is_active is True
+
+        activate_policy(p2, actor=admin)
+        assert p2.is_active is True
+        assert p1.is_active is False
+
+        rolled_back = rollback_policy(p2, actor=admin)
+        assert rolled_back.id == p1.id
+        assert p1.is_active is True
+        assert p2.is_active is False
+
+
+def test_compliance_evidence_link_enforces_tenant_scope(app):
+    with app.app_context():
+        admin = User.query.filter_by(username="admin").first()
+        client_profile = Client.query.first()
+        client_role = Role.query.filter_by(name="client").first()
+        assert admin is not None
+        assert client_profile is not None
+        assert client_role is not None
+
+        other_user = User(
+            role=client_role,
+            username="client_scope2",
+            email="client_scope2@test.local",
+            first_name="Scope",
+            last_name="Two",
+            status="active",
+        )
+        other_user.set_password("Client123!")
+        other_client = Client(user=other_user, company_name="Scope 2")
+        db.session.add_all([other_user, other_client])
+        db.session.flush()
+
+        control = upsert_checklist_item(
+            client_id=client_profile.id,
+            control_code="ac-tenant-scope",
+            title="Tenant scope control",
+            description="pytest",
+            status="in_progress",
+            owner=admin,
+            due_date=None,
+            actor=admin,
+        )
+        db.session.flush()
+
+        log_activity(
+            "test.compliance.scope.same_tenant",
+            "test_entity",
+            "same-tenant evidence",
+            actor=admin,
+            client=client_profile,
+        )
+        db.session.flush()
+        same_tenant_event = ActivityLog.query.order_by(ActivityLog.id.desc()).first()
+        assert same_tenant_event is not None
+
+        row = link_checklist_evidence(
+            checklist_item=control,
+            evidence_type="audit_log",
+            reference_id=str(same_tenant_event.id),
+            actor=admin,
+        )
+        assert row is not None
+
+        log_activity(
+            "test.compliance.scope.other_tenant",
+            "test_entity",
+            "other-tenant evidence",
+            actor=admin,
+            client=other_client,
+        )
+        db.session.flush()
+        other_tenant_event = ActivityLog.query.order_by(ActivityLog.id.desc()).first()
+        assert other_tenant_event is not None
+
+        with pytest.raises(ValueError):
+            link_checklist_evidence(
+                checklist_item=control,
+                evidence_type="audit_log",
+                reference_id=str(other_tenant_event.id),
+                actor=admin,
+            )

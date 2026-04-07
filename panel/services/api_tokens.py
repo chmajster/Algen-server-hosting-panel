@@ -20,6 +20,7 @@ API_TOKEN_SCOPES = [
     ("backups:read", "backups:read"),
     ("monitoring:read", "monitoring:read"),
     ("status:read", "status:read"),
+    ("events:read", "events:read"),
 ]
 
 

@@ -1,0 +1,118 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">DR readiness</h1>
+  <div class="d-flex gap-2">
+    <form method="post" action="{{ url_for('governance.dr_run') }}" class="d-flex gap-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <select class="form-select form-select-sm" name="client_id">
+        <option value="0">ALL tenants</option>
+        {% for cid, label in clients %}
+        <option value="{{ cid }}" {% if selected_client and selected_client.id == cid %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-sm btn-primary">Run DR checks</button>
+    </form>
+    {% if selected_client %}
+    <form method="post" action="{{ url_for('governance.dr_failover_test') }}" class="d-flex gap-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="client_id" value="{{ selected_client.id }}">
+      <input type="hidden" name="safe_mode" value="1">
+      <button class="btn btn-sm btn-outline-warning">Run failover simulation</button>
+    </form>
+    {% endif %}
+  </div>
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <form method="get" class="row g-2 align-items-end">
+    <div class="col-12 col-md-4">
+      <label class="form-label">Klient</label>
+      <select class="form-select" name="client_id" onchange="this.form.submit()">
+        <option value="">Wybierz klienta</option>
+        {% for cid, label in clients %}
+        <option value="{{ cid }}" {% if selected_client and selected_client.id == cid %}selected{% endif %}>{{ label }} ({{ cid }})</option>
+        {% endfor %}
+      </select>
+    </div>
+  </form>
+</div>
+
+{% if selected_client %}
+<div class="surface-card p-3 mb-3">
+  <h2 class="h5 mb-3">Profil DR dla {{ selected_client.user.username if selected_client.user else selected_client.id }}</h2>
+  <form method="post" action="{{ url_for('governance.dr_profile_save') }}" class="row g-2">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="client_id" value="{{ selected_client.id }}">
+    <div class="col-12 col-md-3"><label class="form-label">Primary region</label><input class="form-control" type="text" name="primary_region" value="{{ selected_client.dr_profile.primary_region if selected_client.dr_profile else '' }}"></div>
+    <div class="col-12 col-md-3"><label class="form-label">Secondary region</label><input class="form-control" type="text" name="secondary_region" value="{{ selected_client.dr_profile.secondary_region if selected_client.dr_profile else '' }}"></div>
+    <div class="col-12 col-md-2"><label class="form-label">RPO target (min)</label><input class="form-control" type="number" min="1" name="rpo_target_minutes" value="{{ selected_client.dr_profile.rpo_target_minutes if selected_client.dr_profile else 1440 }}"></div>
+    <div class="col-12 col-md-2"><label class="form-label">RTO target (min)</label><input class="form-control" type="number" min="1" name="rto_target_minutes" value="{{ selected_client.dr_profile.rto_target_minutes if selected_client.dr_profile else 240 }}"></div>
+    <div class="col-12 col-md-2"><label class="form-label">Notes</label><input class="form-control" type="text" name="notes" value="{{ selected_client.dr_profile.notes if selected_client.dr_profile else '' }}"></div>
+    <div class="col-12"><button class="btn btn-outline-primary">Zapisz profil</button></div>
+  </form>
+</div>
+
+{% if current_snapshot %}
+<div class="row g-3 mb-3">
+  <div class="col-12 col-md-3"><div class="surface-card p-3 h-100"><div class="small text-secondary">Readiness state</div><div class="h4 mb-0">{{ current_snapshot.status }}</div></div></div>
+  <div class="col-12 col-md-3"><div class="surface-card p-3 h-100"><div class="small text-secondary">Replication state</div><div class="h4 mb-0">{{ current_snapshot.replication_status }}</div></div></div>
+  <div class="col-12 col-md-3"><div class="surface-card p-3 h-100"><div class="small text-secondary">RPO</div><div class="h4 mb-0">{{ current_snapshot.rpo_minutes if current_snapshot.rpo_minutes >= 0 else '-' }} / {{ current_snapshot.rpo_target_minutes }}</div></div></div>
+  <div class="col-12 col-md-3"><div class="surface-card p-3 h-100"><div class="small text-secondary">RTO</div><div class="h4 mb-0">{{ current_snapshot.rto_minutes if current_snapshot.rto_minutes >= 0 else '-' }} / {{ current_snapshot.rto_target_minutes }}</div></div></div>
+  <div class="col-12 col-md-4"><div class="surface-card p-3 h-100"><div class="small text-secondary">Replication route</div><div class="h6 mb-0">{{ current_snapshot.replication_source or '-' }} -> {{ current_snapshot.replication_target or '-' }}</div></div></div>
+  <div class="col-12 col-md-4"><div class="surface-card p-3 h-100"><div class="small text-secondary">Last sync</div><div class="h6 mb-0">{{ current_snapshot.last_sync_at or '-' }}</div></div></div>
+  <div class="col-12 col-md-4"><div class="surface-card p-3 h-100"><div class="small text-secondary">Last failover test</div><div class="h6 mb-0">{{ current_snapshot.last_failover_test_result }} ({{ current_snapshot.last_failover_test_at or '-' }})</div></div></div>
+</div>
+{% endif %}
+{% endif %}
+
+<div class="row g-3">
+  <div class="col-12 col-xl-6">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Profile</h2>
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead><tr><th>Client</th><th>Primary</th><th>Secondary</th><th>RPO</th><th>RTO</th></tr></thead>
+          <tbody>
+            {% for row in profiles %}
+            <tr>
+              <td>{{ row.client.user.username if row.client and row.client.user else row.client_id }}</td>
+              <td>{{ row.primary_region or '-' }}</td>
+              <td>{{ row.secondary_region or '-' }}</td>
+              <td>{{ row.rpo_target_minutes }}</td>
+              <td>{{ row.rto_target_minutes }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-secondary">Brak profili DR.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="surface-card p-3 h-100">
+      <h2 class="h5 mb-3">Ostatnie checki DR</h2>
+      <div class="table-responsive">
+        <table class="table align-middle mb-0">
+          <thead><tr><th>Czas</th><th>Client</th><th>Status</th><th>Score</th><th>Message</th></tr></thead>
+          <tbody>
+            {% for row in checks %}
+            <tr>
+              <td>{{ row.checked_at.strftime('%Y-%m-%d %H:%M:%S') if row.checked_at else '-' }}</td>
+              <td>{{ row.client.user.username if row.client and row.client.user else 'ALL' }}</td>
+              <td>{{ row.status }}</td>
+              <td>{{ row.score if row.score is not none else '-' }}</td>
+              <td>{{ row.message or '-' }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-secondary">Brak checkow DR.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
