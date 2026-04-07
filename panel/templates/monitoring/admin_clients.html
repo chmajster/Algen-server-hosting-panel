@@ -17,6 +17,8 @@
           <th>RAM</th>
           <th>Dysk</th>
           <th>Inody</th>
+          <th>Bazy / skrzynki</th>
+          <th>Status limitow</th>
           <th>Ostatnia probka</th>
         </tr>
       </thead>
@@ -24,6 +26,7 @@
         {% for row in rows %}
         {% set usage = row.snapshot %}
         {% set sample = row.latest_sample %}
+        {% set limits = row.limit_report %}
         <tr>
           <td>{{ usage.username }}</td>
           <td><code>{{ usage.container }}</code></td>
@@ -40,6 +43,14 @@
           </td>
           <td>{{ usage.disk_mb }} MB</td>
           <td>{{ usage.inode_count }}</td>
+          <td>{{ usage.database_count }} / {{ usage.mailbox_count }}</td>
+          <td>
+            <div class="small">
+              {% for metric in limits.values() %}
+                <div>{{ metric.label }}: {{ metric.status }}{% if metric.percent is not none %} ({{ metric.percent }}%){% endif %}</div>
+              {% endfor %}
+            </div>
+          </td>
           <td>{{ sample.created_at.strftime('%Y-%m-%d %H:%M') if sample else '-' }}</td>
         </tr>
         {% endfor %}
@@ -48,6 +59,40 @@
   </div>
   {% else %}
   <p class="text-secondary mb-0">Brak danych monitoringu klientow.</p>
+  {% endif %}
+</div>
+
+<div class="surface-card p-3 mt-3">
+  <h2 class="h5 mb-3">Ostatnie alerty limitow zasobow</h2>
+  {% if recent_alerts %}
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Czas</th>
+          <th>Klient</th>
+          <th>Zasob</th>
+          <th>Prog</th>
+          <th>Status</th>
+          <th>Komunikat</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for alert in recent_alerts %}
+        <tr>
+          <td>{{ alert.triggered_at.strftime('%Y-%m-%d %H:%M') if alert.triggered_at else '-' }}</td>
+          <td>{{ alert.client.user.username if alert.client and alert.client.user else alert.client_id }}</td>
+          <td>{{ alert.resource_key }}</td>
+          <td>{{ alert.threshold_label }}</td>
+          <td>{{ alert.status }}</td>
+          <td>{{ alert.message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-secondary mb-0">Brak alertow limitow zasobow.</p>
   {% endif %}
 </div>
 {% endblock %}

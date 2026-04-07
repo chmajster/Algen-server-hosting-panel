@@ -16,6 +16,10 @@
 		</div>
 		<div class="col-md-4">{{ form.cpu_cores.label(class="form-label") }}{{ form.cpu_cores(class="form-control", placeholder="np. 1 lub 1.5") }}</div>
 		<div class="col-md-4">{{ form.ram_mb.label(class="form-label") }}{{ form.ram_mb(class="form-control", placeholder="np. 1024") }}</div>
+		<div class="col-md-3">{{ form.backup_frequency.label(class="form-label") }}{{ form.backup_frequency(class="form-select") }}</div>
+		<div class="col-md-3">{{ form.backup_restore_points.label(class="form-label") }}{{ form.backup_restore_points(class="form-control") }}</div>
+		<div class="col-md-3">{{ form.backup_retention_days.label(class="form-label") }}{{ form.backup_retention_days(class="form-control") }}</div>
+		<div class="col-md-3">{{ form.backup_storage_target_id.label(class="form-label") }}{{ form.backup_storage_target_id(class="form-select") }}</div>
 		<div class="col-12">{{ form.description.label(class="form-label") }}{{ form.description(class="form-control", rows="4") }}</div>
 		<div class="col-12"><button class="btn btn-primary">{{ form.submit.label.text }}</button></div>
 	</form>

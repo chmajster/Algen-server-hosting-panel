@@ -7,9 +7,10 @@ from flask import Blueprint, abort, current_app, jsonify, render_template, reque
 from flask_login import login_required
 
 from panel.extensions import get_client_ip, limiter
-from panel.models import ClientResourceSample
+from panel.models import Client, ClientResourceSample, ResourceLimitAlert
 from panel.services.client_resources import collect_client_resource_usage
 from panel.services.monitoring import collect_server_metrics, service_statuses
+from panel.services.resource_limits import resource_usage_report
 from panel.services.smoketest import run_app_smoke_test, write_smoke_test_log
 from panel.utils.decorators import active_account_required, roles_required
 from panel.utils.query import current_client
@@ -46,15 +47,23 @@ def admin_clients():
 
     rows = []
     for client_id, snapshot in usage_by_client.items():
+        client = Client.query.get(client_id)
+        limit_report = resource_usage_report(client) if client is not None else {}
         rows.append(
             {
                 "snapshot": snapshot,
                 "latest_sample": latest_by_client.get(client_id),
+                "limit_report": limit_report,
             }
         )
 
     rows.sort(key=lambda item: item["snapshot"]["username"])
-    return render_template("monitoring/admin_clients.html", rows=rows)
+    recent_alerts = (
+        ResourceLimitAlert.query.order_by(ResourceLimitAlert.triggered_at.desc(), ResourceLimitAlert.id.desc())
+        .limit(50)
+        .all()
+    )
+    return render_template("monitoring/admin_clients.html", rows=rows, recent_alerts=recent_alerts)
 
 
 @monitoring_bp.route("/client/monitoring")
@@ -75,7 +84,12 @@ def client_usage():
         .limit(30)
         .all()
     )
-    return render_template("monitoring/client_usage.html", snapshot=snapshot, history=history)
+    return render_template(
+        "monitoring/client_usage.html",
+        snapshot=snapshot,
+        history=history,
+        resource_report=resource_usage_report(client),
+    )
 
 
 def _smoke_token_is_valid() -> tuple[bool, bool]:

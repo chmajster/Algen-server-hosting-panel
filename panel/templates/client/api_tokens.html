@@ -18,6 +18,11 @@
       {{ form.name.label(class="form-label") }}
       {{ form.name(class="form-control", placeholder="np. Integracja CRM") }}
     </div>
+    <div class="col-12 col-md-6 col-lg-5">
+      {{ form.scopes.label(class="form-label") }}
+      {{ form.scopes(class="form-select", size="6", multiple=true) }}
+      <div class="form-text">Brak wyboru oznacza token bez uprawnien.</div>
+    </div>
     <div class="col-12 col-md-auto">
       {{ form.submit(class="btn btn-primary") }}
     </div>
@@ -33,6 +38,7 @@
         <tr>
           <th>Nazwa</th>
           <th>Prefix</th>
+          <th>Scopes</th>
           <th>Utworzono</th>
           <th>Ostatnie uzycie</th>
           <th>Akcja</th>
@@ -43,6 +49,7 @@
         <tr>
           <td>{{ token.name }}</td>
           <td><code>{{ token.token_prefix }}</code></td>
+          <td>{{ (token.scopes_json or [])|join(', ') if token.scopes_json else '-' }}</td>
           <td>{{ token.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
           <td>{{ token.last_used_at.strftime('%Y-%m-%d %H:%M') if token.last_used_at else '-' }}</td>
           <td>
@@ -69,6 +76,7 @@
         <tr>
           <th>Nazwa</th>
           <th>Prefix</th>
+          <th>Scopes</th>
           <th>Cofniety</th>
         </tr>
       </thead>
@@ -77,6 +85,7 @@
         <tr>
           <td>{{ token.name }}</td>
           <td><code>{{ token.token_prefix }}</code></td>
+          <td>{{ (token.scopes_json or [])|join(', ') if token.scopes_json else '-' }}</td>
           <td>{{ token.revoked_at.strftime('%Y-%m-%d %H:%M') if token.revoked_at else '-' }}</td>
         </tr>
         {% endfor %}

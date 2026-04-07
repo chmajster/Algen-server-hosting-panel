@@ -8,6 +8,7 @@ from panel.extensions import db
 from panel.forms.services import MailAliasForm, MailboxForm
 from panel.models import Client, Domain, MailAlias, Mailbox
 from panel.services.audit import log_activity
+from panel.services.resource_limits import hard_limit_block_reason
 from panel.utils.decorators import active_account_required, roles_required
 from panel.utils.query import client_choices, current_client, domain_choices, mailbox_choices, owned_or_404
 
@@ -70,6 +71,10 @@ def admin_mailbox_create():
     _populate_mailbox_form(form)
     if form.validate_on_submit():
         client = Client.query.get_or_404(form.client_id.data)
+        limit_reason = hard_limit_block_reason(client, "mailbox_count", upcoming_delta=1)
+        if limit_reason is not None:
+            flash(limit_reason, "danger")
+            return render_template("mail/mailbox_form.html", form=form, title="Nowa skrzynka", locked_client=False)
         mailbox = Mailbox(client=client, password_hash="")
         if _save_mailbox(form, mailbox, client=client, is_create=True):
             db.session.add(mailbox)
@@ -208,6 +213,10 @@ def client_mailbox_create():
     form = MailboxForm()
     _populate_mailbox_form(form, client.id, locked_client=True)
     if form.validate_on_submit():
+        limit_reason = hard_limit_block_reason(client, "mailbox_count", upcoming_delta=1)
+        if limit_reason is not None:
+            flash(limit_reason, "danger")
+            return render_template("mail/mailbox_form.html", form=form, title="Nowa skrzynka", locked_client=True)
         mailbox = Mailbox(client=client, password_hash="")
         if _save_mailbox(form, mailbox, client=client, is_create=True):
             db.session.add(mailbox)

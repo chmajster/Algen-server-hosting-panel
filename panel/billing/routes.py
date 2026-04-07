@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from panel.extensions import csrf, db
 from panel.forms.billing import ClientPlanChangeForm, ClientTopupForm
 from panel.forms.services import ClientServiceForm, ServicePlanForm
-from panel.models import BillingTransaction, Client, ClientService, OnlinePayment, ServicePlan
+from panel.models import BillingTransaction, Client, ClientService, ExternalBackupTarget, OnlinePayment, ServicePlan
 from panel.services.audit import log_activity
 from panel.services.billing import (
     adjust_balance,
@@ -169,6 +169,10 @@ def _service_plan_form_to_model(form: ServicePlanForm, plan: ServicePlan) -> Ser
     plan.daily_price = parse(form.daily_price.data or "0")
     plan.yearly_price = parse(form.yearly_price.data or "0")
     plan.grace_days_override = form.grace_days_override.data if form.grace_days_override.data is not None else None
+    plan.backup_frequency = form.backup_frequency.data
+    plan.backup_restore_points = int(form.backup_restore_points.data or 7)
+    plan.backup_retention_days = int(form.backup_retention_days.data or 30)
+    plan.backup_storage_target_id = form.backup_storage_target_id.data or None
     limits = dict(plan.limits_json or {})
     cpu_value = parse_cpu(form.cpu_cores.data)
     ram_value = parse_ram(form.ram_mb.data)
@@ -184,6 +188,12 @@ def _service_plan_form_to_model(form: ServicePlanForm, plan: ServicePlan) -> Ser
     return plan
 
 
+def _populate_plan_form_targets(form: ServicePlanForm) -> None:
+    form.backup_storage_target_id.choices = [(0, "Lokalny storage")]
+    targets = ExternalBackupTarget.query.order_by(ExternalBackupTarget.name.asc()).all()
+    form.backup_storage_target_id.choices.extend((target.id, target.name) for target in targets)
+
+
 @billing_bp.route("/admin/billing/plans")
 @login_required
 @roles_required("administrator")
@@ -196,6 +206,7 @@ def admin_plans():
 @roles_required("administrator")
 def admin_plan_create():
     form = ServicePlanForm()
+    _populate_plan_form_targets(form)
     if form.validate_on_submit():
         try:
             plan = _service_plan_form_to_model(form, ServicePlan())
@@ -216,11 +227,16 @@ def admin_plan_create():
 def admin_plan_edit(plan_id: int):
     plan = ServicePlan.query.get_or_404(plan_id)
     form = ServicePlanForm(obj=plan)
+    _populate_plan_form_targets(form)
     if request.method == "GET":
         limits = dict(plan.limits_json or {})
         form.cpu_cores.data = str(limits.get("cpu_cores", ""))
         form.ram_mb.data = str(limits.get("ram_mb", ""))
         form.grace_days_override.data = plan.grace_days_override
+        form.backup_frequency.data = plan.backup_frequency
+        form.backup_restore_points.data = plan.backup_restore_points
+        form.backup_retention_days.data = plan.backup_retention_days
+        form.backup_storage_target_id.data = plan.backup_storage_target_id or 0
     if form.validate_on_submit():
         try:
             _service_plan_form_to_model(form, plan)

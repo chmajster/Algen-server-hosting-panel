@@ -64,6 +64,33 @@
         Aby wylaczyc 2FA, potwierdz haslo{% if current_method == 'totp' %} i kod z aplikacji{% endif %}.
       </p>
 
+      {% if recent_backup_codes %}
+      <div class="alert alert-success">
+        <div class="fw-semibold mb-2">Nowe kody zapasowe 2FA</div>
+        <p class="small mb-2">Zapisz kody w bezpiecznym miejscu. Kazdy kod mozna uzyc tylko raz.</p>
+        <div class="d-flex flex-wrap gap-2">
+          {% for backup_code in recent_backup_codes %}
+          <code class="px-2 py-1 border rounded bg-light">{{ backup_code }}</code>
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      <div class="surface-card border p-3 mb-3">
+        <h5 class="mb-2">Kody zapasowe</h5>
+        <p class="text-secondary mb-3">Pozostalo kodow jednorazowych: <strong>{{ backup_codes_count }}</strong></p>
+        <form method="post" action="{{ url_for('auth.regenerate_backup_codes') }}" class="row g-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div class="col-12 col-md-6">
+            <label class="form-label" for="backup-codes-password">Haslo konta</label>
+            <input id="backup-codes-password" class="form-control" type="password" name="password" autocomplete="current-password" required>
+          </div>
+          <div class="col-12">
+            <button type="submit" class="btn btn-outline-primary">Generuj nowe kody zapasowe</button>
+          </div>
+        </form>
+      </div>
+
       <form method="post" class="row g-3">
         {{ disable_form.hidden_tag() }}
         <div class="col-12 col-md-6">
@@ -92,6 +119,7 @@
         <li>Utrudnia brute force i przejecie sesji.</li>
         <li>Dziala przez Google Authenticator lub kod e-mail.</li>
       </ul>
+      <a class="btn btn-outline-secondary w-100 mt-3" href="{{ url_for('auth.sessions_overview') }}">Aktywne sesje</a>
     </div>
   </div>
 </div>

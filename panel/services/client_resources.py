@@ -10,7 +10,7 @@ from pathlib import Path
 from flask import current_app
 
 from panel.extensions import db
-from panel.models import Client, ClientResourceSample
+from panel.models import Client, ClientResourceSample, HostingDatabase, Mailbox
 from panel.services.client_apache import client_apache_container_name
 
 
@@ -118,6 +118,8 @@ def collect_client_resource_usage() -> list[dict]:
                 "memory_limit_mb": container_stats.get("memory_limit_mb"),
                 "disk_mb": round(disk_mb, 2),
                 "inode_count": inode_count,
+                "database_count": HostingDatabase.query.filter_by(client_id=client.id).count(),
+                "mailbox_count": Mailbox.query.filter_by(client_id=client.id).count(),
             }
         )
     return payload
@@ -134,9 +136,14 @@ def record_client_resource_samples() -> int:
                 memory_limit_mb=Decimal(str(item["memory_limit_mb"])) if item.get("memory_limit_mb") is not None else None,
                 disk_mb=Decimal(str(item["disk_mb"])) if item.get("disk_mb") is not None else None,
                 inode_count=item.get("inode_count"),
+                database_count=item.get("database_count"),
+                mailbox_count=item.get("mailbox_count"),
                 metadata_json={"container": item.get("container")},
             )
         )
     if samples:
+        from panel.services.resource_limits import evaluate_all_clients_resource_alerts
+
+        evaluate_all_clients_resource_alerts()
         db.session.commit()
     return len(samples)

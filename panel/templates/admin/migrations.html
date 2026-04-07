@@ -1,0 +1,60 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+  <h1 class="h3 mb-0">{{ title }}</h1>
+  <form method="post" action="{{ url_for('admin.migrations_process') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="btn btn-primary">Przetworz kolejke</button>
+  </form>
+</div>
+
+<div class="surface-card p-3">
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Klient</th>
+          <th>Zrodlo</th>
+          <th>Status</th>
+          <th>Krok</th>
+          <th>Postep</th>
+          <th>Blad</th>
+          <th>Akcje</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for job in jobs %}
+        <tr>
+          <td>#{{ job.id }}</td>
+          <td>{{ job.client.user.username if job.client and job.client.user else '-' }}</td>
+          <td>{{ job.masked_summary or job.source_provider }}</td>
+          <td>{{ job.status }}</td>
+          <td>{{ job.current_step }}</td>
+          <td>{{ job.progress_percent }}%</td>
+          <td class="small">{{ job.last_error or '-' }}</td>
+          <td class="d-flex gap-2 flex-wrap">
+            {% if job.status in ['queued', 'running', 'draft'] %}
+            <form method="post" action="{{ url_for('admin.migration_cancel', job_id=job.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-danger">Anuluj</button>
+            </form>
+            {% endif %}
+            {% if job.status in ['failed', 'cancelled'] %}
+            <form method="post" action="{{ url_for('admin.migration_retry', job_id=job.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-sm btn-outline-secondary">Retry</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="text-center text-secondary py-4">Brak zgloszen migracji.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -12,6 +12,30 @@ from panel.models import ApiToken, User
 
 
 TOKEN_PREFIX = "hp"
+API_TOKEN_SCOPES = [
+    ("profile:read", "profile:read"),
+    ("billing:read", "billing:read"),
+    ("tickets:read", "tickets:read"),
+    ("tickets:write", "tickets:write"),
+    ("backups:read", "backups:read"),
+    ("monitoring:read", "monitoring:read"),
+    ("status:read", "status:read"),
+]
+
+
+def api_scope_values() -> list[str]:
+    return [value for value, _label in API_TOKEN_SCOPES]
+
+
+def normalize_api_scopes(raw_values: list[str] | tuple[str, ...] | None, *, fallback_full: bool = False) -> list[str]:
+    allowed = set(api_scope_values())
+    normalized = [value.strip() for value in (raw_values or []) if (value or "").strip() in allowed]
+    normalized = list(dict.fromkeys(normalized))
+    if normalized:
+        return normalized
+    if fallback_full:
+        return sorted(allowed)
+    return []
 
 
 def _token_hash(secret_part: str) -> str:
@@ -20,10 +44,16 @@ def _token_hash(secret_part: str) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def issue_api_token(*, user: User, name: str) -> tuple[ApiToken, str]:
+def issue_api_token(*, user: User, name: str, scopes: list[str] | None = None) -> tuple[ApiToken, str]:
     secret_part = secrets.token_urlsafe(24)
     prefix = secret_part[:12]
-    token = ApiToken(user=user, name=name.strip(), token_prefix=prefix, token_hash=_token_hash(secret_part))
+    token = ApiToken(
+        user=user,
+        name=name.strip(),
+        token_prefix=prefix,
+        token_hash=_token_hash(secret_part),
+        scopes_json=normalize_api_scopes(scopes, fallback_full=bool(user.is_staff)),
+    )
     db.session.add(token)
     db.session.flush()
     plain = f"{TOKEN_PREFIX}_{token.id}_{secret_part}"
@@ -40,6 +70,13 @@ def parse_bearer_token(header_value: str | None) -> str | None:
 
 
 def authenticate_api_token(raw_token: str | None) -> User | None:
+    token = authenticate_api_token_record(raw_token)
+    if token is None:
+        return None
+    return token.user
+
+
+def authenticate_api_token_record(raw_token: str | None) -> ApiToken | None:
     token_value = (raw_token or "").strip()
     if not token_value:
         return None
@@ -59,7 +96,7 @@ def authenticate_api_token(raw_token: str | None) -> User | None:
 
     token.last_used_at = datetime.utcnow()
     db.session.commit()
-    return token.user
+    return token
 
 
 def revoke_api_token(token: ApiToken) -> None:

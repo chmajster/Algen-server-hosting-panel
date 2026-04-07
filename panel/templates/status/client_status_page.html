@@ -1,0 +1,90 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-3 mb-3">
+  <h1 class="h3 mb-2">Status uslug</h1>
+  <p class="mb-0">Aktualny stan platformy: <strong>{{ overall_state }}</strong></p>
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <h2 class="h5 mb-3">Biezace incydenty</h2>
+  {% if incidents %}
+  <div class="list-group list-group-flush">
+    {% for event in incidents %}
+    <div class="list-group-item px-0">
+      <div class="d-flex justify-content-between flex-wrap gap-2">
+        <strong>{{ event.title }}</strong>
+        <span>{{ event.state }}</span>
+      </div>
+      <div class="small text-secondary">Start: {{ event.starts_at.strftime('%Y-%m-%d %H:%M') if event.starts_at else '-' }}</div>
+      <p class="mb-1">{{ event.public_message }}</p>
+      {% if event.affected_components_json %}
+      <div class="small">Komponenty: {{ event.affected_components_json|join(', ') }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-secondary mb-0">Brak aktywnych incydentow.</p>
+  {% endif %}
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <h2 class="h5 mb-3">Okna maintenance</h2>
+  {% if maintenance %}
+  <div class="list-group list-group-flush">
+    {% for event in maintenance %}
+    <div class="list-group-item px-0">
+      <div class="d-flex justify-content-between flex-wrap gap-2">
+        <strong>{{ event.title }}</strong>
+        <span>{{ event.state }}</span>
+      </div>
+      <div class="small text-secondary">
+        {{ event.starts_at.strftime('%Y-%m-%d %H:%M') if event.starts_at else '-' }}
+        {% if event.ends_at %} - {{ event.ends_at.strftime('%Y-%m-%d %H:%M') }}{% endif %}
+      </div>
+      <p class="mb-1">{{ event.public_message }}</p>
+      {% if event.affected_components_json %}
+      <div class="small">Komponenty: {{ event.affected_components_json|join(', ') }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="text-secondary mb-0">Brak aktywnych maintenance.</p>
+  {% endif %}
+</div>
+
+<div class="surface-card p-3">
+  <h2 class="h5 mb-3">Historia zdarzen</h2>
+  {% if history %}
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Start</th>
+          <th>Koniec</th>
+          <th>Typ</th>
+          <th>Stan</th>
+          <th>Tytul</th>
+          <th>Komunikat</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in history %}
+        <tr>
+          <td>{{ event.starts_at.strftime('%Y-%m-%d %H:%M') if event.starts_at else '-' }}</td>
+          <td>{{ event.ends_at.strftime('%Y-%m-%d %H:%M') if event.ends_at else '-' }}</td>
+          <td>{{ event.event_type }}</td>
+          <td>{{ event.state }}</td>
+          <td>{{ event.title }}</td>
+          <td>{{ event.public_message }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-secondary mb-0">Brak historii zdarzen.</p>
+  {% endif %}
+</div>
+{% endblock %}

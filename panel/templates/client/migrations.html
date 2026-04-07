@@ -1,0 +1,88 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="row g-4">
+  <div class="col-12 col-xl-5">
+    <div class="surface-card p-4">
+      <h1 class="h3 mb-3">{{ title }}</h1>
+      <p class="text-secondary">Zglos migracje hostingu z innego panelu. Dane wrazliwe nie sa zapisywane jawnie.</p>
+      <form method="post" class="row g-3">
+        {{ form.hidden_tag() }}
+        <div class="col-12">
+          {{ form.source_provider.label(class="form-label") }}
+          {{ form.source_provider(class="form-select") }}
+        </div>
+        <div class="col-12">
+          {{ form.source_hostname.label(class="form-label") }}
+          {{ form.source_hostname(class="form-control", placeholder="old-host.example.com") }}
+        </div>
+        <div class="col-12">
+          {{ form.source_username.label(class="form-label") }}
+          {{ form.source_username(class="form-control") }}
+        </div>
+        <div class="col-12">
+          {{ form.source_password.label(class="form-label") }}
+          {{ form.source_password(class="form-control", autocomplete="new-password") }}
+        </div>
+        <div class="col-12">
+          {{ form.source_path.label(class="form-label") }}
+          {{ form.source_path(class="form-control", placeholder="/home/account/public_html") }}
+        </div>
+        <div class="col-12">
+          {{ form.notes.label(class="form-label") }}
+          {{ form.notes(class="form-control", rows="3") }}
+        </div>
+        <div class="col-12">
+          {{ form.submit(class="btn btn-primary") }}
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-7">
+    <div class="surface-card p-4">
+      <h2 class="h5 mb-3">Twoje zgloszenia migracji</h2>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Zrodlo</th>
+              <th>Status</th>
+              <th>Krok</th>
+              <th>Postep</th>
+              <th>Utworzono</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for job in jobs %}
+            <tr>
+              <td>#{{ job.id }}</td>
+              <td>{{ job.masked_summary or '-' }}</td>
+              <td>{{ job.status }}</td>
+              <td>{{ job.current_step }}</td>
+              <td>{{ job.progress_percent }}%</td>
+              <td>{{ job.created_at.strftime('%Y-%m-%d %H:%M') if job.created_at else '-' }}</td>
+              <td>
+                {% if job.status in ['queued', 'running', 'draft'] %}
+                <form method="post" action="{{ url_for('client.migration_cancel', job_id=job.id) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-sm btn-outline-danger">Anuluj</button>
+                </form>
+                {% else %}
+                -
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="7" class="text-center text-secondary py-4">Brak zgloszen migracji.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

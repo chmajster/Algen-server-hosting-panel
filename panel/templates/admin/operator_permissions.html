@@ -1,0 +1,72 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-4">
+  <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mb-3">
+    <h1 class="h3 mb-0">{{ title }}</h1>
+    <a class="btn btn-outline-secondary" href="{{ url_for('admin.users') }}">Powrot do listy uzytkownikow</a>
+  </div>
+
+  <div class="alert alert-info">
+    Gdy granularne uprawnienia sa <strong>wylaczone</strong>, operator zachowuje pelny dostep (tryb zgodnosci wstecznej).
+  </div>
+
+  <form method="post" class="vstack gap-3">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="form-check form-switch">
+      <input
+        class="form-check-input"
+        type="checkbox"
+        role="switch"
+        id="granular-enabled"
+        name="granular_enabled"
+        value="1"
+        {% if granular_enabled %}checked{% endif %}
+      >
+      <label class="form-check-label" for="granular-enabled">
+        Wlacz granularne uprawnienia dla tego operatora
+      </label>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>Domena</th>
+            <th>Odczyt</th>
+            <th>Zapis</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for domain in domains %}
+          {% set perms = matrix.get(domain.key, {}) %}
+          <tr>
+            <td>{{ domain.label }}</td>
+            <td>
+              <input
+                class="form-check-input"
+                type="checkbox"
+                name="{{ domain.key }}_can_read"
+                {% if perms.get('can_read') %}checked{% endif %}
+              >
+            </td>
+            <td>
+              <input
+                class="form-check-input"
+                type="checkbox"
+                name="{{ domain.key }}_can_write"
+                {% if perms.get('can_write') %}checked{% endif %}
+              >
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div>
+      <button type="submit" class="btn btn-primary">Zapisz uprawnienia</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

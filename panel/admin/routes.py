@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, flash, redirect, render_template, request, url_for
@@ -9,14 +10,19 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from panel.extensions import db
 from panel.forms.admin import AppearanceSettingsForm, BalanceAdjustmentForm, PasswordResetForm, UserForm
+from panel.forms.automations import AutomationManualTriggerForm, AutomationRuleForm
 from panel.models import (
     ActivityLog,
+    AutomationExecution,
+    AutomationRule,
     BillingTransaction,
     Client,
     Domain,
     FTPAccount,
     HostingDatabase,
     Mailbox,
+    MigrationJob,
+    OperatorPermission,
     Role,
     Subdomain,
     User,
@@ -25,7 +31,11 @@ from panel.models import (
 from panel.services.audit import log_activity
 from panel.services.billing import adjust_balance, ensure_client_balance
 from panel.services.monitoring import collect_server_metrics, service_statuses
+from panel.services.migrations import cancel_migration_job, run_due_migration_jobs
+from panel.services.operator_permissions import domain_choices, has_custom_permissions, permissions_matrix, save_permissions_matrix
 from panel.services.smoketest import run_app_smoke_test, write_smoke_test_log
+from panel.services.automations import execute_automation_rules, parse_json_text
+from panel.services.reporting import financial_metrics
 from panel.services.settings import (
     CSS_FRAMEWORK_SETTING_KEY,
     css_framework_choices,
@@ -60,6 +70,28 @@ def _safe_all(query, default=None):
         return query.all()
     except SQLAlchemyError:
         return default
+
+
+def _automation_form_to_model(form: AutomationRuleForm, rule: AutomationRule) -> tuple[AutomationRule | None, str | None]:
+    try:
+        conditions = parse_json_text(form.conditions_json.data, default={})
+        actions = parse_json_text(form.actions_json.data, default=[])
+    except json.JSONDecodeError as exc:
+        return None, f"Nieprawidlowy JSON: {exc.msg}"
+
+    if conditions and not isinstance(conditions, dict):
+        return None, "Warunki musza byc obiektem JSON."
+    if not isinstance(actions, list):
+        return None, "Akcje musza byc lista JSON."
+
+    rule.name = (form.name.data or "").strip()
+    rule.description = (form.description.data or "").strip() or None
+    rule.trigger_event = (form.trigger_event.data or "").strip()
+    rule.conditions_json = conditions or {}
+    rule.actions_json = actions
+    rule.stop_on_match = bool(form.stop_on_match.data)
+    rule.is_active = bool(form.is_active.data)
+    return rule, None
 
 
 @admin_bp.route("/")
@@ -102,6 +134,14 @@ def dashboard():
     )
 
 
+@admin_bp.route("/reports")
+@login_required
+@roles_required("administrator")
+def reports():
+    metrics = financial_metrics()
+    return render_template("admin/reports.html", title="Raporty", metrics=metrics)
+
+
 def _user_form_to_model(form: UserForm, user: User) -> User:
     role = Role.query.filter_by(name=form.role.data).first()
     user.role = role
@@ -122,6 +162,8 @@ def _user_form_to_model(form: UserForm, user: User) -> User:
         client.auto_resume_services = form.auto_resume_services.data
         ensure_client_balance(client)
         db.session.add(client)
+    elif user.id is not None:
+        OperatorPermission.query.filter_by(user_id=user.id).delete(synchronize_session=False)
     if old_status != user.status:
         db.session.add(
             UserStatusHistory(
@@ -133,6 +175,19 @@ def _user_form_to_model(form: UserForm, user: User) -> User:
             )
         )
     return user
+
+
+def _parse_operator_permissions_form() -> tuple[bool, dict[str, dict[str, bool]]]:
+    enabled = (request.form.get("granular_enabled") or "") == "1"
+    matrix: dict[str, dict[str, bool]] = {}
+    for domain in domain_choices():
+        can_read = bool(request.form.get(f"{domain.key}_can_read"))
+        can_write = bool(request.form.get(f"{domain.key}_can_write"))
+        matrix[domain.key] = {
+            "can_read": can_read,
+            "can_write": can_write,
+        }
+    return enabled, matrix
 
 
 @admin_bp.route("/users")
@@ -183,6 +238,44 @@ def user_edit(user_id: int):
         flash("Zmiany zapisane.", "success")
         return redirect(url_for("admin.users"))
     return render_template("admin/user_form.html", form=form, title=f"Edycja {user.username}")
+
+
+@admin_bp.route("/users/<int:user_id>/permissions", methods=["GET", "POST"])
+@login_required
+@roles_required("administrator")
+def user_permissions(user_id: int):
+    if not current_user.has_role("administrator"):
+        flash("Brak uprawnien do zarzadzania uprawnieniami operatorow.", "danger")
+        return redirect(url_for("admin.users"))
+
+    user = User.query.get_or_404(user_id)
+    if not user.has_role("operator"):
+        flash("Granularne uprawnienia mozna przypisywac tylko operatorom.", "warning")
+        return redirect(url_for("admin.user_edit", user_id=user.id))
+
+    if request.method == "POST":
+        enabled, matrix = _parse_operator_permissions_form()
+        save_permissions_matrix(user=user, enabled=enabled, matrix=matrix)
+        log_activity(
+            "admin.operator_permissions_update",
+            "operator_permission",
+            f"Zaktualizowano granularne uprawnienia operatora {user.username}",
+            entity_id=user.id,
+            actor=current_user,
+            metadata={"enabled": enabled, "domains": matrix},
+        )
+        db.session.commit()
+        flash("Uprawnienia operatora zostaly zapisane.", "success")
+        return redirect(url_for("admin.user_permissions", user_id=user.id))
+
+    return render_template(
+        "admin/operator_permissions.html",
+        user=user,
+        domains=domain_choices(),
+        matrix=permissions_matrix(user),
+        granular_enabled=has_custom_permissions(user),
+        title=f"Uprawnienia operatora: {user.username}",
+    )
 
 
 @admin_bp.route("/users/<int:user_id>/delete", methods=["POST"])
@@ -296,3 +389,231 @@ def smoke_test():
         )
         db.session.commit()
     return render_template("admin/smoke_test.html", title="Smoketest aplikacji", result=result)
+
+
+@admin_bp.route("/migrations")
+@login_required
+@roles_required("administrator")
+def migrations():
+    jobs = MigrationJob.query.order_by(MigrationJob.created_at.desc()).limit(200).all()
+    return render_template("admin/migrations.html", title="Migracje", jobs=jobs)
+
+
+@admin_bp.route("/migrations/process", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def migrations_process():
+    processed = run_due_migration_jobs(limit=50)
+    execute_automation_rules(
+        trigger_event="migration.queue_processed",
+        payload={"processed": processed},
+        actor=current_user,
+    )
+    log_activity(
+        "admin.migrations_process",
+        "migration_job",
+        "Uruchomiono przetwarzanie kolejek migracji",
+        entity_id="migration-queue",
+        actor=current_user,
+        metadata={"processed": processed},
+    )
+    db.session.commit()
+    flash(f"Przetworzono zgloszen migracji: {processed}.", "success")
+    return redirect(url_for("admin.migrations"))
+
+
+@admin_bp.route("/migrations/<int:job_id>/cancel", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def migration_cancel(job_id: int):
+    job = MigrationJob.query.get_or_404(job_id)
+    reason = (request.form.get("reason") or "Anulowano przez administratora").strip()
+    if cancel_migration_job(job, reason=reason):
+        execute_automation_rules(
+            trigger_event="migration.job_cancelled_by_admin",
+            payload={"job_id": job.id, "client_id": job.client_id, "status": "cancelled"},
+            client=job.client,
+            actor=current_user,
+        )
+        log_activity(
+            "admin.migration_cancel",
+            "migration_job",
+            "Administrator anulowal migracje",
+            entity_id=job.id,
+            actor=current_user,
+            client=job.client,
+            metadata={"reason": reason[:255]},
+        )
+        db.session.commit()
+        flash("Migracja zostala anulowana.", "info")
+    else:
+        flash("Tej migracji nie mozna juz anulowac.", "warning")
+    return redirect(url_for("admin.migrations"))
+
+
+@admin_bp.route("/migrations/<int:job_id>/retry", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def migration_retry(job_id: int):
+    job = MigrationJob.query.get_or_404(job_id)
+    if job.status not in {"failed", "cancelled"}:
+        flash("Retry jest dostepne tylko dla statusu failed lub cancelled.", "warning")
+        return redirect(url_for("admin.migrations"))
+
+    job.status = "queued"
+    job.current_step = "preflight"
+    job.progress_percent = 0
+    job.started_at = None
+    job.finished_at = None
+    job.last_error = None
+    log_activity(
+        "admin.migration_retry",
+        "migration_job",
+        "Administrator ponownie zakolejkowal migracje",
+        entity_id=job.id,
+        actor=current_user,
+        client=job.client,
+    )
+    execute_automation_rules(
+        trigger_event="migration.job_requeued",
+        payload={"job_id": job.id, "client_id": job.client_id, "status": job.status},
+        client=job.client,
+        actor=current_user,
+    )
+    db.session.commit()
+    flash("Migracja zostala ponownie zakolejkowana.", "success")
+    return redirect(url_for("admin.migrations"))
+
+
+@admin_bp.route("/automations", methods=["GET", "POST"])
+@login_required
+@roles_required("administrator")
+def automations():
+    trigger_form = AutomationManualTriggerForm()
+    if trigger_form.validate_on_submit():
+        try:
+            payload = parse_json_text(trigger_form.payload_json.data, default={})
+        except json.JSONDecodeError as exc:
+            flash(f"Nieprawidlowy JSON payload: {exc.msg}", "danger")
+            return redirect(url_for("admin.automations"))
+        if payload and not isinstance(payload, dict):
+            flash("Payload musi byc obiektem JSON.", "danger")
+            return redirect(url_for("admin.automations"))
+
+        summary = execute_automation_rules(
+            trigger_event=trigger_form.trigger_event.data,
+            payload=payload,
+            actor=current_user,
+        )
+        log_activity(
+            "admin.automation_trigger_manual",
+            "automation_rule",
+            "Reczne wyzwolenie automatyzacji",
+            entity_id=trigger_form.trigger_event.data,
+            actor=current_user,
+            metadata=summary,
+        )
+        db.session.commit()
+        flash(
+            "Wyzwolono reguly: "
+            f"matched={summary['matched']}, executed={summary['executed']}, "
+            f"failed={summary['failed']}, skipped={summary['skipped']}",
+            "info",
+        )
+        return redirect(url_for("admin.automations"))
+
+    rules = AutomationRule.query.order_by(AutomationRule.created_at.desc()).all()
+    executions = AutomationExecution.query.order_by(AutomationExecution.created_at.desc()).limit(100).all()
+    return render_template(
+        "admin/automations.html",
+        title="Automatyzacje",
+        rules=rules,
+        executions=executions,
+        trigger_form=trigger_form,
+    )
+
+
+@admin_bp.route("/automations/new", methods=["GET", "POST"])
+@login_required
+@roles_required("administrator")
+def automation_create():
+    form = AutomationRuleForm()
+    if request.method == "GET":
+        form.conditions_json.data = "{}"
+        form.actions_json.data = "[]"
+        form.is_active.data = True
+
+    if form.validate_on_submit():
+        rule, error = _automation_form_to_model(form, AutomationRule())
+        if error:
+            flash(error, "danger")
+        else:
+            db.session.add(rule)
+            log_activity(
+                "admin.automation_create",
+                "automation_rule",
+                f"Utworzono regule automatyzacji {rule.name}",
+                entity_id=rule.name,
+                actor=current_user,
+                metadata={"trigger_event": rule.trigger_event},
+            )
+            db.session.commit()
+            flash("Regula automatyzacji zostala utworzona.", "success")
+            return redirect(url_for("admin.automations"))
+
+    return render_template("admin/automation_form.html", title="Nowa regula automatyzacji", form=form)
+
+
+@admin_bp.route("/automations/<int:rule_id>/edit", methods=["GET", "POST"])
+@login_required
+@roles_required("administrator")
+def automation_edit(rule_id: int):
+    rule = AutomationRule.query.get_or_404(rule_id)
+    form = AutomationRuleForm(obj=rule)
+    if request.method == "GET":
+        form.conditions_json.data = json.dumps(rule.conditions_json or {}, ensure_ascii=True, indent=2)
+        form.actions_json.data = json.dumps(rule.actions_json or [], ensure_ascii=True, indent=2)
+        form.is_active.data = bool(rule.is_active)
+        form.stop_on_match.data = bool(rule.stop_on_match)
+
+    if form.validate_on_submit():
+        updated_rule, error = _automation_form_to_model(form, rule)
+        if error:
+            flash(error, "danger")
+        else:
+            log_activity(
+                "admin.automation_edit",
+                "automation_rule",
+                f"Zaktualizowano regule automatyzacji {updated_rule.name}",
+                entity_id=updated_rule.id,
+                actor=current_user,
+                metadata={"trigger_event": updated_rule.trigger_event},
+            )
+            db.session.commit()
+            flash("Regula automatyzacji zostala zaktualizowana.", "success")
+            return redirect(url_for("admin.automations"))
+
+    return render_template(
+        "admin/automation_form.html",
+        title=f"Edycja reguly: {rule.name}",
+        form=form,
+    )
+
+
+@admin_bp.route("/automations/<int:rule_id>/delete", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def automation_delete(rule_id: int):
+    rule = AutomationRule.query.get_or_404(rule_id)
+    rule_name = rule.name
+    db.session.delete(rule)
+    log_activity(
+        "admin.automation_delete",
+        "automation_rule",
+        f"Usunieto regule automatyzacji {rule_name}",
+        entity_id=rule_id,
+        actor=current_user,
+    )
+    db.session.commit()
+    flash("Regula automatyzacji zostala usunieta.", "warning")
+    return redirect(url_for("admin.automations"))

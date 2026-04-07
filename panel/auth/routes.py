@@ -17,7 +17,16 @@ from panel.forms.auth import (
     TwoFactorEnableEmailForm,
     TwoFactorEnableTotpForm,
 )
-from panel.models import Client, ClientBalance, ClientService, PaymentSetting, Role, ServicePlan, User
+from panel.models import Client, ClientBalance, ClientService, PaymentSetting, Role, ServicePlan, User, UserSession
+from panel.services.account_security import (
+    consume_backup_code,
+    generate_backup_codes,
+    get_active_session_by_plain_token,
+    issue_user_session,
+    remaining_backup_codes_count,
+    revoke_all_sessions_for_user,
+    revoke_session,
+)
 from panel.services.audit import log_activity
 from panel.services.billing import schedule_initial_cycle
 from panel.services.mailer import send_plain_email
@@ -172,8 +181,15 @@ def _complete_login(
     remember: bool,
     next_url: str | None,
     used_two_factor: bool,
+    used_backup_code: bool = False,
 ) -> str:
     login_user(user, remember=remember)
+    plain_session_token, session_row = issue_user_session(
+        user=user,
+        ip_address=get_client_ip(),
+        user_agent=request.headers.get("User-Agent"),
+    )
+    session["auth_session_token"] = plain_session_token
     user.last_login_at = datetime.utcnow()
     user.last_login_ip = get_client_ip()
     log_activity(
@@ -182,7 +198,11 @@ def _complete_login(
         "Udane logowanie z 2FA" if used_two_factor else "Udane logowanie",
         entity_id=user.id,
         actor=user,
-        metadata={"two_factor": used_two_factor},
+        metadata={
+            "two_factor": used_two_factor,
+            "backup_code": used_backup_code,
+            "session_id": session_row.id,
+        },
     )
     db.session.commit()
     flash("Zalogowano pomyslnie.", "success")
@@ -428,6 +448,12 @@ def login_2fa():
             is_valid = verify_totp_code(user.two_factor_secret, form.code.data)
             error_message = None if is_valid else "Nieprawidlowy kod 2FA."
 
+        used_backup_code = False
+        if not is_valid and consume_backup_code(user=user, code=form.code.data):
+            is_valid = True
+            used_backup_code = True
+            error_message = None
+
         if is_valid:
             remember = bool(session.get("pending_2fa_remember", False))
             next_url = _safe_next_url(session.get("pending_2fa_next"))
@@ -438,6 +464,7 @@ def login_2fa():
                     remember=remember,
                     next_url=next_url,
                     used_two_factor=True,
+                    used_backup_code=used_backup_code,
                 )
             )
 
@@ -498,6 +525,8 @@ def two_factor_settings():
             current_user.two_factor_enabled = True
             current_user.two_factor_method = "totp"
             current_user.two_factor_secret = setup_secret
+            generated_codes = generate_backup_codes(user=current_user, count=10)
+            session["recent_2fa_backup_codes"] = generated_codes
             session.pop("two_factor_setup_secret", None)
             log_activity(
                 "auth.two_factor_enabled",
@@ -529,6 +558,8 @@ def two_factor_settings():
             current_user.two_factor_enabled = True
             current_user.two_factor_method = "email"
             current_user.two_factor_secret = None
+            generated_codes = generate_backup_codes(user=current_user, count=10)
+            session["recent_2fa_backup_codes"] = generated_codes
             session.pop("two_factor_setup_secret", None)
             log_activity(
                 "auth.two_factor_enabled",
@@ -557,6 +588,7 @@ def two_factor_settings():
             current_user.two_factor_enabled = False
             current_user.two_factor_method = "totp"
             current_user.two_factor_secret = None
+            current_user.two_factor_backup_codes.clear()
             log_activity(
                 "auth.two_factor_disabled",
                 "user",
@@ -577,6 +609,7 @@ def two_factor_settings():
         setup_secret_display = format_secret_for_display(setup_secret)
 
     current_method = _effective_two_factor_method(current_user)
+    recent_backup_codes = session.pop("recent_2fa_backup_codes", None)
 
     return render_template(
         "auth/two_factor_settings.html",
@@ -588,18 +621,115 @@ def two_factor_settings():
         current_method=current_method,
         email_method_available=email_method_available,
         email_address_masked=_mask_email(current_user.email or "") if current_user.email else None,
+        backup_codes_count=remaining_backup_codes_count(current_user),
+        recent_backup_codes=recent_backup_codes,
         title="Ustawienia 2FA",
     )
+
+
+@auth_bp.route("/2fa/backup-codes/regenerate", methods=["POST"])
+@login_required
+def regenerate_backup_codes():
+    if not _two_factor_available():
+        abort(404)
+    if not current_user.two_factor_enabled:
+        flash("Najpierw wlacz 2FA.", "warning")
+        return redirect(url_for("auth.two_factor_settings"))
+
+    password = (request.form.get("password") or "").strip()
+    if not current_user.check_password(password):
+        flash("Nieprawidlowe haslo.", "danger")
+        return redirect(url_for("auth.two_factor_settings"))
+
+    generated_codes = generate_backup_codes(user=current_user, count=10)
+    session["recent_2fa_backup_codes"] = generated_codes
+    log_activity(
+        "auth.two_factor_backup_codes_regenerated",
+        "user",
+        "Wygenerowano nowe kody zapasowe 2FA",
+        entity_id=current_user.id,
+        actor=current_user,
+    )
+    db.session.commit()
+    flash("Wygenerowano nowe kody zapasowe 2FA.", "success")
+    return redirect(url_for("auth.two_factor_settings"))
+
+
+@auth_bp.route("/sessions")
+@login_required
+def sessions_overview():
+    plain_token = session.get("auth_session_token")
+    current_session = get_active_session_by_plain_token(plain_token)
+    sessions = (
+        UserSession.query.filter_by(user_id=current_user.id)
+        .order_by(UserSession.created_at.desc())
+        .limit(100)
+        .all()
+    )
+    return render_template(
+        "auth/sessions.html",
+        sessions=sessions,
+        current_session_id=current_session.id if current_session else None,
+        title="Aktywne sesje",
+    )
+
+
+@auth_bp.route("/sessions/<int:session_id>/revoke", methods=["POST"])
+@login_required
+def revoke_user_session(session_id: int):
+    plain_token = session.get("auth_session_token")
+    current_session = get_active_session_by_plain_token(plain_token)
+    session_row = UserSession.query.get_or_404(session_id)
+    if session_row.user_id != current_user.id:
+        abort(404)
+    if current_session is not None and session_row.id == current_session.id:
+        flash("Nie mozna cofnac biezacej sesji z tego widoku.", "warning")
+        return redirect(url_for("auth.sessions_overview"))
+
+    revoke_session(session_row=session_row)
+    log_activity(
+        "auth.session_revoke",
+        "user_session",
+        "Cofnieto sesje uzytkownika",
+        entity_id=session_row.id,
+        actor=current_user,
+    )
+    db.session.commit()
+    flash("Sesja zostala cofnieta.", "success")
+    return redirect(url_for("auth.sessions_overview"))
+
+
+@auth_bp.route("/sessions/logout-all", methods=["POST"])
+@login_required
+def logout_all_sessions():
+    plain_token = session.get("auth_session_token")
+    revoked = revoke_all_sessions_for_user(user=current_user, except_plain_token=plain_token)
+    log_activity(
+        "auth.sessions_logout_all",
+        "user_session",
+        "Cofnieto wszystkie inne sesje uzytkownika",
+        entity_id=current_user.id,
+        actor=current_user,
+        metadata={"revoked": revoked},
+    )
+    db.session.commit()
+    flash(f"Cofnieto sesji: {revoked}.", "success")
+    return redirect(url_for("auth.sessions_overview"))
 
 
 @auth_bp.route("/logout")
 @login_required
 def logout():
     user_id = current_user.id
+    current_session = get_active_session_by_plain_token(session.get("auth_session_token"))
+    if current_session is not None:
+        revoke_session(session_row=current_session)
     log_activity("auth.logout", "user", "Wylogowanie użytkownika", entity_id=user_id, actor=current_user)
     db.session.commit()
     _clear_pending_login_state()
     session.pop("two_factor_setup_secret", None)
+    session.pop("recent_2fa_backup_codes", None)
+    session.pop("auth_session_token", None)
     logout_user()
     flash("Wylogowano.", "info")
     return redirect(url_for("auth.login"))

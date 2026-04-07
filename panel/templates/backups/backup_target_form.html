@@ -1,0 +1,44 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-4">
+  <h1 class="h3 mb-4">{{ title }}</h1>
+  <form method="post" class="row g-3">
+    {{ form.hidden_tag() }}
+    <div class="col-md-6">
+      {{ form.name.label(class="form-label") }}
+      {{ form.name(class="form-control") }}
+    </div>
+    <div class="col-md-6">
+      {{ form.provider.label(class="form-label") }}
+      {{ form.provider(class="form-select") }}
+    </div>
+    <div class="col-md-6">
+      {{ form.endpoint_url.label(class="form-label") }}
+      {{ form.endpoint_url(class="form-control", placeholder="np. https://s3.us-east-1.amazonaws.com") }}
+    </div>
+    <div class="col-md-6">
+      {{ form.bucket_name.label(class="form-label") }}
+      {{ form.bucket_name(class="form-control") }}
+    </div>
+    <div class="col-md-4">
+      {{ form.region.label(class="form-label") }}
+      {{ form.region(class="form-control", placeholder="np. eu-central-1") }}
+    </div>
+    <div class="col-md-4">
+      {{ form.access_key_env.label(class="form-label") }}
+      {{ form.access_key_env(class="form-control", placeholder="BACKUP_S3_ACCESS_KEY") }}
+    </div>
+    <div class="col-md-4">
+      {{ form.secret_key_env.label(class="form-label") }}
+      {{ form.secret_key_env(class="form-control", placeholder="BACKUP_S3_SECRET_KEY") }}
+    </div>
+    <div class="col-12 form-check ms-3">
+      {{ form.is_active(class="form-check-input") }} {{ form.is_active.label(class="form-check-label") }}
+    </div>
+    <div class="col-12">
+      {{ form.submit(class="btn btn-primary") }}
+      <a class="btn btn-outline-secondary" href="{{ url_for('backups.admin_backups') }}">Anuluj</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

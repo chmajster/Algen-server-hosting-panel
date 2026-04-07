@@ -2,7 +2,54 @@
 {% block content %}
 <div class="d-flex justify-content-between mb-3">
 	<h1 class="h3">Backupy</h1>
-	<a class="btn btn-primary" href="{{ url_for('backups.admin_create') }}">Nowy backup</a>
+	<div class="d-flex gap-2">
+		<form method="post" action="{{ url_for('backups.admin_verify_schedule', schedule_type='daily') }}">
+			<button class="btn btn-outline-secondary">Weryfikuj dziennie</button>
+		</form>
+		<form method="post" action="{{ url_for('backups.admin_verify_schedule', schedule_type='weekly') }}">
+			<button class="btn btn-outline-secondary">Weryfikuj tygodniowo</button>
+		</form>
+		<a class="btn btn-outline-primary" href="{{ url_for('backups.admin_target_create') }}">Nowy target</a>
+		<a class="btn btn-primary" href="{{ url_for('backups.admin_create') }}">Nowy backup</a>
+	</div>
+</div>
+
+<div class="surface-card p-3 mb-3">
+	<h2 class="h5 mb-3">External storage targets</h2>
+	{% if targets %}
+	<div class="table-responsive">
+		<table class="table align-middle">
+			<thead>
+				<tr>
+					<th>Nazwa</th>
+					<th>Provider</th>
+					<th>Bucket</th>
+					<th>Status</th>
+					<th>Last check</th>
+					<th>Akcja</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for target in targets %}
+				<tr>
+					<td>{{ target.name }}</td>
+					<td>{{ target.provider }}</td>
+					<td>{{ target.bucket_name }}</td>
+					<td>{{ 'aktywny' if target.is_active else 'wylaczony' }} ({{ target.last_check_status or '-' }})</td>
+					<td>{{ target.last_checked_at.strftime('%Y-%m-%d %H:%M') if target.last_checked_at else '-' }}</td>
+					<td>
+						<form method="post" action="{{ url_for('backups.admin_target_check', target_id=target.id) }}">
+							<button class="btn btn-sm btn-outline-secondary">Test</button>
+						</form>
+					</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+	{% else %}
+	<p class="text-secondary mb-0">Brak targetow external storage.</p>
+	{% endif %}
 </div>
 
 <div class="surface-card p-3 mb-3">
@@ -14,6 +61,10 @@
 					<th>Klient</th>
 					<th>Typ</th>
 					<th>Status</th>
+					<th>Target</th>
+					<th>External location</th>
+					<th>Retencja do</th>
+					<th>Weryfikacja</th>
 					<th>Sciezka</th>
 					<th>Zaplanowano</th>
 					<th>Akcja</th>
@@ -25,12 +76,21 @@
 					<td>{{ backup.client.user.username }}</td>
 					<td>{{ backup.backup_type }}</td>
 					<td>{{ backup.status }}</td>
+					<td>{{ backup.storage_target.name if backup.storage_target else 'local' }}</td>
+					<td>{{ backup.external_location or '-' }}</td>
+					<td>{{ backup.retention_until.strftime('%Y-%m-%d') if backup.retention_until else '-' }}</td>
+					<td>{{ backup.last_verification_status or '-' }}{% if backup.last_verified_at %} ({{ backup.last_verified_at.strftime('%Y-%m-%d %H:%M') }}){% endif %}</td>
 					<td>{{ backup.storage_path }}</td>
 					<td>{{ backup.scheduled_for.strftime('%Y-%m-%d') if backup.scheduled_for else '-' }}</td>
 					<td>
-						<form method="post" action="{{ url_for('backups.admin_restore_request', backup_id=backup.id) }}">
-							<button class="btn btn-sm btn-outline-primary">Restore</button>
-						</form>
+						<div class="d-flex gap-2 flex-wrap">
+							<form method="post" action="{{ url_for('backups.admin_restore_request', backup_id=backup.id) }}">
+								<button class="btn btn-sm btn-outline-primary">Restore</button>
+							</form>
+							<form method="post" action="{{ url_for('backups.admin_verify_backup', backup_id=backup.id) }}">
+								<button class="btn btn-sm btn-outline-secondary">Verify</button>
+							</form>
+						</div>
 					</td>
 				</tr>
 				{% endfor %}
@@ -39,6 +99,40 @@
 	</div>
 	{% else %}
 	<p class="text-secondary mb-0">Brak backupow.</p>
+	{% endif %}
+</div>
+
+<div class="surface-card p-3 mb-3">
+	<h2 class="h5 mb-3">Historia weryfikacji backupow</h2>
+	{% if verification_runs %}
+	<div class="table-responsive">
+		<table class="table align-middle mb-0">
+			<thead>
+				<tr>
+					<th>Czas</th>
+					<th>Backup</th>
+					<th>Schedule</th>
+					<th>Status</th>
+					<th>Duration</th>
+					<th>Komunikat</th>
+				</tr>
+			</thead>
+			<tbody>
+				{% for run in verification_runs %}
+				<tr>
+					<td>{{ run.created_at.strftime('%Y-%m-%d %H:%M') if run.created_at else '-' }}</td>
+					<td>#{{ run.backup_id }}</td>
+					<td>{{ run.schedule_type }}</td>
+					<td>{{ run.status }}</td>
+					<td>{{ run.restore_duration_ms if run.restore_duration_ms is not none else '-' }} ms</td>
+					<td>{{ run.validation_message or '-' }}</td>
+				</tr>
+				{% endfor %}
+			</tbody>
+		</table>
+	</div>
+	{% else %}
+	<p class="text-secondary mb-0">Brak historii weryfikacji.</p>
 	{% endif %}
 </div>
 

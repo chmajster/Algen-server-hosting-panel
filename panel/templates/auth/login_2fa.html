@@ -9,6 +9,7 @@
       {% else %}
       <p class="text-secondary mb-4">Podaj 6-cyfrowy kod z Google Authenticator, aby dokonczyc logowanie.</p>
       {% endif %}
+      <p class="small text-secondary">Mozesz tez wpisac jednorazowy kod zapasowy 2FA.</p>
       <form method="post">
         {{ form.hidden_tag() }}
         <div class="mb-3">

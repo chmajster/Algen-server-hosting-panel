@@ -9,6 +9,7 @@ from panel.extensions import db
 from panel.forms.services import DatabaseForm, DatabaseUserForm
 from panel.models import Client, DatabaseUser, HostingDatabase
 from panel.services.audit import log_activity
+from panel.services.resource_limits import hard_limit_block_reason
 from panel.utils.decorators import active_account_required, roles_required
 from panel.utils.query import client_choices, current_client, database_choices, owned_or_404, service_choices
 
@@ -109,6 +110,10 @@ def admin_database_create():
     _populate_database_form(form)
     if form.validate_on_submit():
         client = Client.query.get_or_404(form.client_id.data)
+        limit_reason = hard_limit_block_reason(client, "database_count", upcoming_delta=1)
+        if limit_reason is not None:
+            flash(limit_reason, "danger")
+            return render_template("databases/database_form.html", form=form, title="Nowa baza danych")
         database = HostingDatabase(
             client=client,
             client_service_id=form.client_service_id.data or None,

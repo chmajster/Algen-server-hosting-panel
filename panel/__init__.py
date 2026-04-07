@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime, timedelta
 
-from flask import Flask, abort, redirect, request, url_for
+from flask import Flask, abort, redirect, request, session, url_for
+from flask_login import current_user, logout_user
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from panel.config import config_map
 from panel.extensions import bcrypt, csrf, db, get_client_ip, limiter, login_manager, migrate
+from panel.services.account_security import get_active_session_by_plain_token, issue_user_session, touch_session
 from panel.utils.security import is_ip_allowed
 
 
@@ -58,6 +61,38 @@ def register_security_hooks(app: Flask) -> None:
             abort(403)
         return None
 
+    @app.before_request
+    def enforce_active_user_session():
+        if not current_user.is_authenticated:
+            return None
+        if request.endpoint in {"auth.logout", "auth.login", "auth.login_2fa"}:
+            return None
+
+        plain_token = session.get("auth_session_token")
+        if not plain_token:
+            new_token, _ = issue_user_session(
+                user=current_user,
+                ip_address=get_client_ip(),
+                user_agent=request.headers.get("User-Agent"),
+            )
+            session["auth_session_token"] = new_token
+            db.session.commit()
+            return None
+
+        session_row = get_active_session_by_plain_token(plain_token)
+        if session_row is None:
+            logout_user()
+            session.pop("auth_session_token", None)
+            if request.path.startswith("/api/"):
+                abort(401)
+            return redirect(url_for("auth.login", next=request.path))
+
+        last_seen = session_row.last_activity_at
+        if last_seen is None or datetime.utcnow() - last_seen >= timedelta(minutes=2):
+            touch_session(plain_token)
+            db.session.commit()
+        return None
+
 
 def register_blueprints(app: Flask) -> None:
     from panel.api.routes import api_bp
@@ -74,6 +109,7 @@ def register_blueprints(app: Flask) -> None:
     from panel.hosts.routes import hosts_bp
     from panel.mail.routes import mail_bp
     from panel.monitoring.routes import monitoring_bp
+    from panel.status.routes import status_bp
     from panel.ssl.routes import ssl_bp
     from panel.tickets.routes import tickets_bp
     from panel.webhooks.routes import webhooks_bp
@@ -93,6 +129,7 @@ def register_blueprints(app: Flask) -> None:
         backups_bp,
         files_bp,
         monitoring_bp,
+        status_bp,
         hosts_bp,
         tickets_bp,
         webhooks_bp,
@@ -109,6 +146,7 @@ def register_cli(app: Flask) -> None:
     from panel.services.billing import run_billing_cycle, run_financial_enforcement
     from panel.services.backup_restore import process_restore_job
     from panel.services.client_resources import record_client_resource_samples
+    from panel.services.migrations import run_due_migration_jobs
     from panel.services.smoketest import run_app_smoke_test, write_smoke_test_log
     from panel.services.ticket_sla import escalate_due_tickets
 
@@ -218,6 +256,14 @@ def register_cli(app: Flask) -> None:
     def collect_resource_samples():
         samples = record_client_resource_samples()
         click.echo(f"Zapisano probek monitoringu: {samples}")
+
+    @app.cli.command("process-migration-jobs")
+    @click.option("--limit", default=50, show_default=True, type=int)
+    def process_migration_jobs(limit: int):
+        processed = run_due_migration_jobs(limit=limit)
+        if processed:
+            db.session.commit()
+        click.echo(f"Przetworzono jobow migracji: {processed}")
 
     @app.cli.command("process-restore-jobs")
     @click.option("--limit", default=50, show_default=True, type=int)

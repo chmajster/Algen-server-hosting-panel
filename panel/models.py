@@ -88,6 +88,22 @@ class User(UserMixin, TimestampMixin, db.Model):
         cascade="all, delete-orphan",
         foreign_keys="ApiToken.user_id",
     )
+    sessions = db.relationship(
+        "UserSession",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        order_by="desc(UserSession.created_at)",
+    )
+    two_factor_backup_codes = db.relationship(
+        "TwoFactorBackupCode",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    operator_permissions = db.relationship(
+        "OperatorPermission",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     def set_password(self, password: str) -> None:
         self.password_hash = bcrypt.generate_password_hash(password).decode("utf-8")
@@ -164,6 +180,8 @@ class Client(TimestampMixin, db.Model):
     resource_samples = db.relationship("ClientResourceSample", back_populates="client", cascade="all, delete-orphan")
     restore_jobs = db.relationship("BackupRestoreJob", back_populates="client", cascade="all, delete-orphan")
     webhook_endpoints = db.relationship("WebhookEndpoint", back_populates="client", cascade="all, delete-orphan")
+    resource_alerts = db.relationship("ResourceLimitAlert", back_populates="client", cascade="all, delete-orphan")
+    migration_jobs = db.relationship("MigrationJob", back_populates="client", cascade="all, delete-orphan")
 
 
 class ClientBalance(TimestampMixin, db.Model):
@@ -219,10 +237,15 @@ class ServicePlan(TimestampMixin, db.Model):
     daily_price = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal("0.00"))
     yearly_price = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal("0.00"))
     grace_days_override = db.Column(db.Integer, nullable=True)
+    backup_frequency = db.Column(db.String(16), nullable=False, default="daily")
+    backup_restore_points = db.Column(db.Integer, nullable=False, default=7)
+    backup_retention_days = db.Column(db.Integer, nullable=False, default=30)
+    backup_storage_target_id = db.Column(db.Integer, db.ForeignKey("external_backup_targets.id"), nullable=True, index=True)
     limits_json = db.Column(db.JSON, nullable=False, default=dict)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
     services = db.relationship("ClientService", back_populates="plan")
+    backup_storage_target = db.relationship("ExternalBackupTarget", back_populates="service_plans")
 
 
 class ClientService(TimestampMixin, db.Model):
@@ -508,13 +531,21 @@ class Backup(TimestampMixin, db.Model):
     backup_type = db.Column(db.String(32), nullable=False, index=True)
     status = db.Column(db.String(32), nullable=False, default="queued", index=True)
     storage_path = db.Column(db.String(255), nullable=False)
+    storage_target_id = db.Column(db.Integer, db.ForeignKey("external_backup_targets.id"), nullable=True, index=True)
+    external_location = db.Column(db.String(1024), nullable=True)
     size_bytes = db.Column(db.BigInteger, nullable=True)
     scheduled_for = db.Column(db.DateTime, nullable=True)
     completed_at = db.Column(db.DateTime, nullable=True)
+    retention_until = db.Column(db.DateTime, nullable=True)
+    last_verified_at = db.Column(db.DateTime, nullable=True)
+    last_verification_status = db.Column(db.String(32), nullable=True, index=True)
+    last_verification_message = db.Column(db.String(500), nullable=True)
 
     client = db.relationship("Client", back_populates="backups")
     domain = db.relationship("Domain")
     database = db.relationship("HostingDatabase")
+    storage_target = db.relationship("ExternalBackupTarget", back_populates="backups")
+    verification_runs = db.relationship("BackupVerificationRun", back_populates="backup", cascade="all, delete-orphan")
 
 
 class Ticket(TimestampMixin, db.Model):
@@ -600,6 +631,8 @@ class ClientResourceSample(TimestampMixin, db.Model):
     memory_limit_mb = db.Column(db.Numeric(12, 2), nullable=True)
     disk_mb = db.Column(db.Numeric(12, 2), nullable=True)
     inode_count = db.Column(db.BigInteger, nullable=True)
+    database_count = db.Column(db.Integer, nullable=True)
+    mailbox_count = db.Column(db.Integer, nullable=True)
     metadata_json = db.Column(db.JSON, nullable=True)
 
     client = db.relationship("Client", back_populates="resource_samples")
@@ -633,10 +666,12 @@ class ApiToken(TimestampMixin, db.Model):
     name = db.Column(db.String(120), nullable=False)
     token_prefix = db.Column(db.String(24), nullable=False, index=True)
     token_hash = db.Column(db.String(128), nullable=False)
+    scopes_json = db.Column(db.JSON, nullable=False, default=list)
     last_used_at = db.Column(db.DateTime, nullable=True)
     revoked_at = db.Column(db.DateTime, nullable=True, index=True)
 
     user = db.relationship("User", back_populates="api_tokens")
+    idempotency_keys = db.relationship("ApiIdempotencyKey", back_populates="api_token", cascade="all, delete-orphan")
 
 
 class WebhookEndpoint(TimestampMixin, db.Model):
@@ -668,9 +703,207 @@ class WebhookDelivery(TimestampMixin, db.Model):
     status_code = db.Column(db.Integer, nullable=True)
     success = db.Column(db.Boolean, nullable=False, default=False, index=True)
     response_excerpt = db.Column(db.String(500), nullable=True)
+    attempt_count = db.Column(db.Integer, nullable=False, default=0)
+    max_attempts = db.Column(db.Integer, nullable=False, default=5)
+    next_retry_at = db.Column(db.DateTime, nullable=True, index=True)
+    dead_lettered = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    dead_lettered_at = db.Column(db.DateTime, nullable=True)
+    dead_letter_reason = db.Column(db.String(500), nullable=True)
+    idempotency_key = db.Column(db.String(191), nullable=True, index=True)
+    destination_url = db.Column(db.String(500), nullable=True)
+    request_headers_json = db.Column(db.JSON, nullable=True)
+    request_body_sha256 = db.Column(db.String(64), nullable=True)
     attempted_at = db.Column(db.DateTime, nullable=True, index=True)
 
     endpoint = db.relationship("WebhookEndpoint", back_populates="deliveries")
+
+
+class ResourceLimitAlert(TimestampMixin, db.Model):
+    __tablename__ = "resource_limit_alerts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
+    resource_key = db.Column(db.String(32), nullable=False, index=True)
+    threshold_label = db.Column(db.String(32), nullable=False, index=True)
+    threshold_percent = db.Column(db.Integer, nullable=True)
+    usage_value = db.Column(db.Numeric(14, 2), nullable=True)
+    limit_value = db.Column(db.Numeric(14, 2), nullable=True)
+    status = db.Column(db.String(32), nullable=False, default="active", index=True)
+    message = db.Column(db.String(255), nullable=False)
+    triggered_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    resolved_at = db.Column(db.DateTime, nullable=True, index=True)
+    last_measured_at = db.Column(db.DateTime, nullable=True)
+    notification_channels_json = db.Column(db.JSON, nullable=True)
+
+    client = db.relationship("Client", back_populates="resource_alerts")
+
+
+class ExternalBackupTarget(TimestampMixin, db.Model):
+    __tablename__ = "external_backup_targets"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    provider = db.Column(db.String(32), nullable=False, index=True)
+    endpoint_url = db.Column(db.String(500), nullable=True)
+    bucket_name = db.Column(db.String(255), nullable=False)
+    region = db.Column(db.String(64), nullable=True)
+    access_key_env = db.Column(db.String(120), nullable=False)
+    secret_key_env = db.Column(db.String(120), nullable=False)
+    is_active = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    last_checked_at = db.Column(db.DateTime, nullable=True)
+    last_check_status = db.Column(db.String(32), nullable=True)
+    last_check_message = db.Column(db.String(500), nullable=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+
+    created_by = db.relationship("User")
+    backups = db.relationship("Backup", back_populates="storage_target")
+    service_plans = db.relationship("ServicePlan", back_populates="backup_storage_target")
+
+
+class BackupVerificationRun(TimestampMixin, db.Model):
+    __tablename__ = "backup_verification_runs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    backup_id = db.Column(db.Integer, db.ForeignKey("backups.id"), nullable=False, index=True)
+    status = db.Column(db.String(32), nullable=False, default="queued", index=True)
+    schedule_type = db.Column(db.String(16), nullable=False, default="daily")
+    verified_at = db.Column(db.DateTime, nullable=True)
+    restore_duration_ms = db.Column(db.Integer, nullable=True)
+    validation_message = db.Column(db.String(500), nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    backup = db.relationship("Backup", back_populates="verification_runs")
+
+
+class ApiIdempotencyKey(TimestampMixin, db.Model):
+    __tablename__ = "api_idempotency_keys"
+
+    id = db.Column(db.Integer, primary_key=True)
+    api_token_id = db.Column(db.Integer, db.ForeignKey("api_tokens.id"), nullable=False, index=True)
+    idempotency_key = db.Column(db.String(128), nullable=False)
+    method = db.Column(db.String(16), nullable=False)
+    path = db.Column(db.String(255), nullable=False)
+    request_hash = db.Column(db.String(64), nullable=False)
+    response_status = db.Column(db.Integer, nullable=False)
+    response_body_json = db.Column(db.JSON, nullable=True)
+    processed_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    api_token = db.relationship("ApiToken", back_populates="idempotency_keys")
+
+    __table_args__ = (
+        UniqueConstraint("api_token_id", "idempotency_key", "method", "path", name="uq_api_idempotency_token_key"),
+    )
+
+
+class UserSession(TimestampMixin, db.Model):
+    __tablename__ = "user_sessions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    session_token_hash = db.Column(db.String(128), nullable=False, unique=True, index=True)
+    ip_address = db.Column(db.String(45), nullable=True)
+    user_agent = db.Column(db.String(500), nullable=True)
+    last_activity_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+    revoked_at = db.Column(db.DateTime, nullable=True, index=True)
+
+    user = db.relationship("User", back_populates="sessions")
+
+
+class TwoFactorBackupCode(TimestampMixin, db.Model):
+    __tablename__ = "two_factor_backup_codes"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    code_hash = db.Column(db.String(128), nullable=False, index=True)
+    used_at = db.Column(db.DateTime, nullable=True, index=True)
+
+    user = db.relationship("User", back_populates="two_factor_backup_codes")
+
+
+class OperatorPermission(TimestampMixin, db.Model):
+    __tablename__ = "operator_permissions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    domain = db.Column(db.String(32), nullable=False)
+    can_read = db.Column(db.Boolean, nullable=False, default=True)
+    can_write = db.Column(db.Boolean, nullable=False, default=True)
+
+    user = db.relationship("User", back_populates="operator_permissions")
+
+    __table_args__ = (UniqueConstraint("user_id", "domain", name="uq_operator_permission_user_domain"),)
+
+
+class StatusEvent(TimestampMixin, db.Model):
+    __tablename__ = "status_events"
+
+    id = db.Column(db.Integer, primary_key=True)
+    event_type = db.Column(db.String(16), nullable=False, index=True)
+    state = db.Column(db.String(32), nullable=False, index=True)
+    title = db.Column(db.String(200), nullable=False)
+    public_message = db.Column(db.Text, nullable=False)
+    internal_note = db.Column(db.Text, nullable=True)
+    affected_components_json = db.Column(db.JSON, nullable=True)
+    starts_at = db.Column(db.DateTime, nullable=False, index=True)
+    ends_at = db.Column(db.DateTime, nullable=True, index=True)
+    resolved_at = db.Column(db.DateTime, nullable=True, index=True)
+    is_public = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+
+    created_by = db.relationship("User")
+
+
+class MigrationJob(TimestampMixin, db.Model):
+    __tablename__ = "migration_jobs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
+    requested_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    source_provider = db.Column(db.String(64), nullable=False)
+    status = db.Column(db.String(32), nullable=False, default="draft", index=True)
+    current_step = db.Column(db.String(32), nullable=False, default="preflight")
+    progress_percent = db.Column(db.Integer, nullable=False, default=0)
+    payload_encrypted = db.Column(db.Text, nullable=True)
+    masked_summary = db.Column(db.String(255), nullable=True)
+    last_error = db.Column(db.String(500), nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+
+    client = db.relationship("Client", back_populates="migration_jobs")
+    requested_by = db.relationship("User")
+
+
+class AutomationRule(TimestampMixin, db.Model):
+    __tablename__ = "automation_rules"
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    description = db.Column(db.String(255), nullable=True)
+    trigger_event = db.Column(db.String(120), nullable=False, index=True)
+    conditions_json = db.Column(db.JSON, nullable=True)
+    actions_json = db.Column(db.JSON, nullable=False, default=list)
+    stop_on_match = db.Column(db.Boolean, nullable=False, default=False)
+    is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+
+    executions = db.relationship("AutomationExecution", back_populates="rule", cascade="all, delete-orphan")
+
+
+class AutomationExecution(TimestampMixin, db.Model):
+    __tablename__ = "automation_executions"
+
+    id = db.Column(db.Integer, primary_key=True)
+    rule_id = db.Column(db.Integer, db.ForeignKey("automation_rules.id"), nullable=False, index=True)
+    trigger_event = db.Column(db.String(120), nullable=False, index=True)
+    event_fingerprint = db.Column(db.String(64), nullable=False)
+    status = db.Column(db.String(32), nullable=False, default="pending", index=True)
+    message = db.Column(db.String(500), nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+    executed_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    rule = db.relationship("AutomationRule", back_populates="executions")
+
+    __table_args__ = (UniqueConstraint("rule_id", "event_fingerprint", name="uq_automation_rule_fingerprint"),)
 
 
 class ActivityLog(TimestampMixin, db.Model):
@@ -745,3 +978,8 @@ Index("ix_resource_samples_client_created", ClientResourceSample.client_id, Clie
 Index("ix_restore_jobs_client_status", BackupRestoreJob.client_id, BackupRestoreJob.status)
 Index("ix_api_tokens_user_revoked", ApiToken.user_id, ApiToken.revoked_at)
 Index("ix_webhooks_active_client", WebhookEndpoint.is_active, WebhookEndpoint.client_id)
+Index("ix_resource_alert_client_state", ResourceLimitAlert.client_id, ResourceLimitAlert.status)
+Index("ix_webhook_delivery_retry", WebhookDelivery.next_retry_at, WebhookDelivery.dead_lettered)
+Index("ix_status_events_public_state", StatusEvent.is_public, StatusEvent.state)
+Index("ix_migration_jobs_client_status", MigrationJob.client_id, MigrationJob.status)
+Index("ix_automation_exec_rule_status", AutomationExecution.rule_id, AutomationExecution.status)

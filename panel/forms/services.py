@@ -50,6 +50,15 @@ class ServicePlanForm(FlaskForm):
     daily_price = StringField("Cena dzienna", validators=[Optional(), Length(max=32)])
     yearly_price = StringField("Cena roczna", validators=[Optional(), Length(max=32)])
     grace_days_override = IntegerField("Grace period (dni)", validators=[Optional(), NumberRange(min=0, max=365)])
+    backup_frequency = SelectField(
+        "Backup frequency",
+        choices=[("daily", "daily"), ("weekly", "weekly"), ("monthly", "monthly")],
+        validators=[DataRequired()],
+        default="daily",
+    )
+    backup_restore_points = IntegerField("Liczba restore pointow", validators=[DataRequired(), NumberRange(min=1, max=365)], default=7)
+    backup_retention_days = IntegerField("Retencja (dni)", validators=[DataRequired(), NumberRange(min=1, max=3650)], default=30)
+    backup_storage_target_id = SelectField("Storage target", coerce=int, validators=[Optional()], choices=[])
     cpu_cores = StringField("CPU (vCPU)", validators=[Optional(), Length(max=16)])
     ram_mb = StringField("RAM (MB)", validators=[Optional(), Length(max=16)])
     description = TextAreaField("Opis", validators=[Optional(), Length(max=2000)])
@@ -255,6 +264,7 @@ class BackupForm(FlaskForm):
     domain_id = SelectField("Domena", coerce=int, validators=[Optional()])
     database_id = SelectField("Baza", coerce=int, validators=[Optional()])
     backup_type = SelectField("Typ", choices=[("client", "Klient"), ("domain", "Domena"), ("database", "Baza danych")], validators=[DataRequired()])
+    storage_target_id = SelectField("Storage target", coerce=int, validators=[Optional()], choices=[(0, "Lokalny")])
     storage_path = StringField("Sciezka archiwum", validators=[DataRequired(), Length(max=255)])
     scheduled_for = DateField("Zaplanowano na", validators=[Optional()], format="%Y-%m-%d")
     submit = SubmitField("Zapisz")

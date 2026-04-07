@@ -8,6 +8,8 @@ from pathlib import Path
 from panel.extensions import db
 from panel.models import (
     AccountSuspension,
+    AutomationExecution,
+    AutomationRule,
     BillingCycle,
     BillingTransaction,
     Client,
@@ -19,7 +21,9 @@ from panel.models import (
     Domain,
     HostingDatabase,
     Mailbox,
+    MigrationJob,
     OnlinePayment,
+    OperatorPermission,
     SSLCertificate,
     ServicePlan,
     Subdomain,
@@ -27,14 +31,18 @@ from panel.models import (
     Ticket,
     TicketAttachment,
     TicketMessage,
+    TwoFactorBackupCode,
     User,
+    UserSession,
     WebhookDelivery,
     WebhookEndpoint,
 )
 from panel.seed import seed_defaults
+from panel.services.account_security import generate_backup_codes, hash_session_token, issue_user_session
 from panel.services.client_apache import client_apache_resource_limits
 from panel.services.api_tokens import issue_api_token
 from panel.services.billing import adjust_balance, update_client_financial_status_for_date
+from panel.services.operator_permissions import domain_choices
 from panel.services.two_factor import current_totp, generate_two_factor_secret
 
 
@@ -200,6 +208,152 @@ def test_login_rejects_invalid_2fa_code(client, app):
     assert "Nieprawidlowy kod 2FA" in response.get_data(as_text=True)
 
 
+def test_login_accepts_backup_code_for_2fa(client, app):
+    with app.app_context():
+        user = User.query.filter_by(username="admin").first()
+        assert user is not None
+        user.two_factor_enabled = True
+        user.two_factor_method = "totp"
+        user.two_factor_secret = generate_two_factor_secret()
+        backup_codes = generate_backup_codes(user=user, count=5)
+        db.session.commit()
+
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=False,
+    )
+    assert login_response.status_code == 302
+    assert login_response.headers.get("Location", "").startswith("/auth/2fa")
+
+    verify_response = client.post(
+        "/auth/2fa",
+        data={"code": backup_codes[0]},
+        follow_redirects=False,
+    )
+    assert verify_response.status_code == 302
+    assert verify_response.headers.get("Location", "").startswith("/admin/")
+
+    with app.app_context():
+        user = User.query.filter_by(username="admin").first()
+        assert user is not None
+        remaining = (
+            TwoFactorBackupCode.query.filter_by(user_id=user.id).filter(TwoFactorBackupCode.used_at.is_(None)).count()
+        )
+        assert remaining == 4
+
+
+def test_login_creates_tracked_session_and_logout_revokes_it(client, app):
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=False,
+    )
+    assert login_response.status_code == 302
+
+    with client.session_transaction() as session_data:
+        session_token = session_data.get("auth_session_token")
+    assert session_token
+
+    with app.app_context():
+        user = User.query.filter_by(username="client").first()
+        assert user is not None
+        active_session = UserSession.query.filter_by(user_id=user.id).filter(UserSession.revoked_at.is_(None)).first()
+        assert active_session is not None
+        active_session_id = active_session.id
+
+    logout_response = client.get("/auth/logout", follow_redirects=False)
+    assert logout_response.status_code == 302
+
+    with app.app_context():
+        revoked_session = UserSession.query.get(active_session_id)
+        assert revoked_session is not None
+        assert revoked_session.revoked_at is not None
+
+
+def test_user_can_revoke_other_session(client, app):
+    first_login = client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=False,
+    )
+    assert first_login.status_code == 302
+
+    with client.session_transaction() as session_data:
+        current_plain_token = session_data.get("auth_session_token")
+    assert current_plain_token
+    current_hash = hash_session_token(current_plain_token)
+    assert current_hash is not None
+
+    with app.app_context():
+        user = User.query.filter_by(username="client").first()
+        assert user is not None
+        _, other_session = issue_user_session(
+            user=user,
+            ip_address="127.0.0.2",
+            user_agent="pytest-other-session",
+        )
+        db.session.commit()
+        sessions = (
+            UserSession.query.filter_by(user_id=user.id)
+            .filter(UserSession.revoked_at.is_(None))
+            .all()
+        )
+        assert len(sessions) >= 2
+        target_session_id = next(
+            row.id for row in sessions if row.session_token_hash != current_hash and row.revoked_at is None
+        )
+        assert target_session_id == other_session.id
+
+    revoke_response = client.post(
+        f"/auth/sessions/{target_session_id}/revoke",
+        follow_redirects=True,
+    )
+    assert revoke_response.status_code == 200
+    assert "Sesja zostala cofnieta" in revoke_response.get_data(as_text=True)
+
+    with app.app_context():
+        revoked_session = UserSession.query.get(target_session_id)
+        assert revoked_session is not None
+        assert revoked_session.revoked_at is not None
+
+
+def test_logout_all_sessions_keeps_current(client, app):
+    first_login = client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=False,
+    )
+    assert first_login.status_code == 302
+
+    with app.app_context():
+        user = User.query.filter_by(username="client").first()
+        assert user is not None
+        issue_user_session(
+            user=user,
+            ip_address="127.0.0.2",
+            user_agent="pytest-other-session",
+        )
+        db.session.commit()
+
+    logout_all_response = client.post("/auth/sessions/logout-all", follow_redirects=True)
+    assert logout_all_response.status_code == 200
+    assert "Cofnieto sesji" in logout_all_response.get_data(as_text=True)
+
+    with client.session_transaction() as session_data:
+        current_plain_token = session_data.get("auth_session_token")
+    assert current_plain_token
+    current_hash = hash_session_token(current_plain_token)
+    assert current_hash is not None
+
+    with app.app_context():
+        user = User.query.filter_by(username="client").first()
+        assert user is not None
+        active_sessions = UserSession.query.filter_by(user_id=user.id).filter(UserSession.revoked_at.is_(None)).all()
+        assert len(active_sessions) == 1
+        assert active_sessions[0].session_token_hash == current_hash
+
+
 def test_user_can_enable_and_disable_2fa_in_settings(client, app):
     client.post(
         "/auth/login",
@@ -231,6 +385,10 @@ def test_user_can_enable_and_disable_2fa_in_settings(client, app):
         assert user.two_factor_enabled is True
         assert user.two_factor_method == "totp"
         user_secret = user.two_factor_secret
+        backup_codes_count = (
+            TwoFactorBackupCode.query.filter_by(user_id=user.id).filter(TwoFactorBackupCode.used_at.is_(None)).count()
+        )
+        assert backup_codes_count == 10
 
     disable_response = client.post(
         "/auth/2fa/settings",
@@ -249,6 +407,8 @@ def test_user_can_enable_and_disable_2fa_in_settings(client, app):
         assert user is not None
         assert user.two_factor_enabled is False
         assert user.two_factor_secret is None
+        backup_codes_count = TwoFactorBackupCode.query.filter_by(user_id=user.id).count()
+        assert backup_codes_count == 0
 
 
 def test_login_supports_email_2fa(client, app):
@@ -316,6 +476,239 @@ def test_login_rejects_external_next_redirect(client):
     location = response.headers.get("Location", "")
     assert location.startswith("/admin/")
     assert "evil.example" not in location
+
+
+def test_operator_without_custom_permissions_keeps_legacy_access(client):
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "operator", "password": "Operator123!"},
+        follow_redirects=False,
+    )
+    assert login_response.status_code == 302
+
+    plans_response = client.get("/admin/billing/plans", follow_redirects=False)
+    assert plans_response.status_code == 200
+
+
+def test_operator_custom_permissions_can_block_billing_read(client, app):
+    with app.app_context():
+        operator = User.query.filter_by(username="operator").first()
+        assert operator is not None
+        db.session.add(
+            OperatorPermission(
+                user_id=operator.id,
+                domain="billing",
+                can_read=False,
+                can_write=False,
+            )
+        )
+        db.session.commit()
+
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "operator", "password": "Operator123!"},
+        follow_redirects=False,
+    )
+    assert login_response.status_code == 302
+
+    plans_response = client.get("/admin/billing/plans", follow_redirects=False)
+    assert plans_response.status_code == 403
+
+
+def test_operator_custom_permissions_can_block_billing_write(client, app):
+    with app.app_context():
+        operator = User.query.filter_by(username="operator").first()
+        assert operator is not None
+        db.session.add(
+            OperatorPermission(
+                user_id=operator.id,
+                domain="billing",
+                can_read=True,
+                can_write=False,
+            )
+        )
+        db.session.commit()
+
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "operator", "password": "Operator123!"},
+        follow_redirects=False,
+    )
+    assert login_response.status_code == 302
+
+    read_response = client.get("/admin/billing/plans", follow_redirects=False)
+    assert read_response.status_code == 200
+
+    write_response = client.post(
+        "/admin/billing/plans/new",
+        data={},
+        follow_redirects=False,
+    )
+    assert write_response.status_code == 403
+
+
+def test_admin_can_manage_operator_permissions_matrix(client, app):
+    with app.app_context():
+        operator = User.query.filter_by(username="operator").first()
+        assert operator is not None
+        operator_id = operator.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=False,
+    )
+
+    get_response = client.get(f"/admin/users/{operator_id}/permissions", follow_redirects=False)
+    assert get_response.status_code == 200
+
+    payload = {"granular_enabled": "1", "billing_can_read": "on"}
+    post_response = client.post(
+        f"/admin/users/{operator_id}/permissions",
+        data=payload,
+        follow_redirects=False,
+    )
+    assert post_response.status_code == 302
+
+    with app.app_context():
+        rows = OperatorPermission.query.filter_by(user_id=operator_id).all()
+        assert len(rows) == len(domain_choices())
+        billing_row = next((row for row in rows if row.domain == "billing"), None)
+        assert billing_row is not None
+        assert billing_row.can_read is True
+        assert billing_row.can_write is False
+
+
+def test_client_can_create_and_cancel_migration_job(client, app):
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=False,
+    )
+
+    create_response = client.post(
+        "/client/migrations",
+        data={
+            "source_provider": "cpanel",
+            "source_hostname": "old-host.example.com",
+            "source_username": "legacy-user",
+            "source_password": "Secret123!",
+            "source_path": "/home/legacy/public_html",
+            "notes": "Prosze przeniesc wszystkie dane.",
+        },
+        follow_redirects=False,
+    )
+    assert create_response.status_code == 302
+
+    with app.app_context():
+        client_user = User.query.filter_by(username="client").first()
+        assert client_user is not None
+        job = MigrationJob.query.filter_by(client_id=client_user.client_profile.id).first()
+        assert job is not None
+        assert job.status == "queued"
+        job_id = job.id
+
+    cancel_response = client.post(
+        f"/client/migrations/{job_id}/cancel",
+        data={"reason": "Zmiana decyzji"},
+        follow_redirects=False,
+    )
+    assert cancel_response.status_code == 302
+
+    with app.app_context():
+        job = MigrationJob.query.get(job_id)
+        assert job is not None
+        assert job.status == "cancelled"
+
+
+def test_admin_can_process_migration_jobs_to_completion(client, app):
+    with app.app_context():
+        requested_by = User.query.filter_by(username="client").first()
+        assert requested_by is not None
+        job = MigrationJob(
+            client=requested_by.client_profile,
+            requested_by=requested_by,
+            source_provider="cpanel",
+            status="queued",
+            current_step="preflight",
+            progress_percent=0,
+            masked_summary="CPANEL | old-host.example.com | l***r",
+        )
+        db.session.add(job)
+        db.session.commit()
+        job_id = job.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=False,
+    )
+
+    for _ in range(5):
+        process_response = client.post("/admin/migrations/process", follow_redirects=False)
+        assert process_response.status_code == 302
+
+    with app.app_context():
+        job = MigrationJob.query.get(job_id)
+        assert job is not None
+        assert job.status == "completed"
+        assert job.progress_percent == 100
+        assert job.current_step == "done"
+
+
+def test_admin_can_create_and_trigger_automation_rule(client, app):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=False,
+    )
+
+    create_response = client.post(
+        "/admin/automations/new",
+        data={
+            "name": "Migration Queue Alarm",
+            "description": "Log alert when queue processed",
+            "trigger_event": "migration.queue_processed",
+            "conditions_json": "{}",
+            "actions_json": '[{"type":"log","message":"Queue processed"}]',
+            "stop_on_match": "y",
+            "is_active": "y",
+        },
+        follow_redirects=False,
+    )
+    assert create_response.status_code == 302
+
+    trigger_response = client.post(
+        "/admin/automations",
+        data={
+            "trigger_event": "migration.queue_processed",
+            "payload_json": '{"processed": 3}',
+        },
+        follow_redirects=False,
+    )
+    assert trigger_response.status_code == 302
+
+    with app.app_context():
+        rule = AutomationRule.query.filter_by(name="Migration Queue Alarm").first()
+        assert rule is not None
+        execution = AutomationExecution.query.filter_by(rule_id=rule.id).first()
+        assert execution is not None
+        assert execution.status == "success"
+
+
+def test_admin_reports_page_shows_financial_metrics(client):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=False,
+    )
+    response = client.get("/admin/reports", follow_redirects=False)
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "MRR" in body
+    assert "ARPU" in body
+    assert "Churn" in body
+    assert "Overdue" in body
 
 
 def test_admin_dashboard_loads(client):
@@ -1373,3 +1766,114 @@ def test_financial_enforcement_manual_override_prevents_auto_suspend_and_unsuspe
         client_profile.balance.balance = Decimal("20.00")
         update_client_financial_status_for_date(client_profile, actor=actor, as_of=date.today())
         assert service.status == "suspended"
+
+
+def test_admin_can_toggle_financial_override_for_service(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+        service = ClientService(
+            client=client_profile,
+            name="Toggle Override",
+            service_type="hosting",
+            status="active",
+            starts_on=date.today(),
+            billing_period="monthly",
+            recurring_amount=Decimal("19.00"),
+            auto_suspend=True,
+            auto_resume=True,
+            financial_enforcement_override=False,
+        )
+        db.session.add(service)
+        db.session.commit()
+        service_id = service.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        f"/admin/billing/services/{service_id}/financial-override",
+        data={"enabled": "1"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+
+    with app.app_context():
+        service = ClientService.query.get(service_id)
+        assert service is not None
+        assert service.financial_enforcement_override is True
+
+
+def test_admin_can_manual_suspend_and_unsuspend_service(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+        service = ClientService(
+            client=client_profile,
+            name="Manual Suspend",
+            service_type="hosting",
+            status="active",
+            starts_on=date.today(),
+            billing_period="monthly",
+            recurring_amount=Decimal("22.00"),
+            auto_suspend=True,
+            auto_resume=True,
+        )
+        db.session.add(service)
+        db.session.commit()
+        service_id = service.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    suspend_response = client.post(
+        f"/admin/billing/services/{service_id}/manual-suspend",
+        data={"reason": "Test manual suspend"},
+        follow_redirects=True,
+    )
+    assert suspend_response.status_code == 200
+
+    with app.app_context():
+        service = ClientService.query.get(service_id)
+        assert service is not None
+        assert service.status == "blocked_manual"
+
+    unsuspend_response = client.post(
+        f"/admin/billing/services/{service_id}/manual-unsuspend",
+        data={},
+        follow_redirects=True,
+    )
+    assert unsuspend_response.status_code == 200
+
+    with app.app_context():
+        service = ClientService.query.get(service_id)
+        assert service is not None
+        assert service.status == "active"
+
+
+def test_admin_billing_services_page_shows_financial_state(client):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.get("/admin/billing/services")
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Uslugi klientow" in body
+
+
+def test_client_billing_page_shows_financial_state(client):
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+    response = client.get("/client/billing")
+    body = response.get_data(as_text=True)
+    assert response.status_code == 200
+    assert "Stan egzekucji finansowej" in body

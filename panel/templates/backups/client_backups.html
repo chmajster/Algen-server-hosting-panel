@@ -9,6 +9,9 @@
 				<tr>
 					<th>Typ</th>
 					<th>Status</th>
+					<th>Target</th>
+					<th>External location</th>
+					<th>Weryfikacja</th>
 					<th>Sciezka</th>
 					<th>Utworzono</th>
 					<th>Akcja</th>
@@ -16,9 +19,18 @@
 			</thead>
 			<tbody>
 				{% for backup in backups %}
+				{% set latest_verification = latest_verification_by_backup.get(backup.id) if latest_verification_by_backup else none %}
 				<tr>
 					<td>{{ backup.backup_type }}</td>
 					<td>{{ backup.status }}</td>
+					<td>{{ backup.storage_target.name if backup.storage_target else 'local' }}</td>
+					<td>{{ backup.external_location or '-' }}</td>
+					<td>
+						{{ backup.last_verification_status or '-' }}
+						{% if latest_verification and latest_verification.verified_at %}
+							<br><small class="text-secondary">{{ latest_verification.verified_at.strftime('%Y-%m-%d %H:%M') }}</small>
+						{% endif %}
+					</td>
 					<td>{{ backup.storage_path }}</td>
 					<td>{{ backup.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
 					<td>

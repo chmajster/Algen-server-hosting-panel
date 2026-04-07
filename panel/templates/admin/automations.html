@@ -1,0 +1,97 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h1 class="h3 mb-0">{{ title }}</h1>
+  <a class="btn btn-primary" href="{{ url_for('admin.automation_create') }}">Nowa regula</a>
+</div>
+
+<div class="row g-4">
+  <div class="col-12 col-xl-4">
+    <div class="surface-card p-3">
+      <h2 class="h5 mb-3">Reczne wyzwolenie</h2>
+      <form method="post" class="row g-3">
+        {{ trigger_form.hidden_tag() }}
+        <div class="col-12">{{ trigger_form.trigger_event.label(class="form-label") }}{{ trigger_form.trigger_event(class="form-control", placeholder="billing.invoice_overdue") }}</div>
+        <div class="col-12">{{ trigger_form.payload_json.label(class="form-label") }}{{ trigger_form.payload_json(class="form-control", rows="6", placeholder='{"client_id": 1, "billing_status": "overdue"}') }}</div>
+        <div class="col-12">{{ trigger_form.submit(class="btn btn-outline-primary") }}</div>
+      </form>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-8">
+    <div class="surface-card p-3">
+      <h2 class="h5 mb-3">Reguly</h2>
+      <div class="table-responsive">
+        <table class="table align-middle">
+          <thead>
+            <tr>
+              <th>Nazwa</th>
+              <th>Zdarzenie</th>
+              <th>Status</th>
+              <th>Akcje</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for rule in rules %}
+            <tr>
+              <td>{{ rule.name }}</td>
+              <td><code>{{ rule.trigger_event }}</code></td>
+              <td>
+                {% if rule.is_active %}
+                <span class="badge text-bg-success">aktywna</span>
+                {% else %}
+                <span class="badge text-bg-secondary">wylaczona</span>
+                {% endif %}
+              </td>
+              <td class="d-flex gap-2 flex-wrap">
+                <a class="btn btn-sm btn-outline-primary" href="{{ url_for('admin.automation_edit', rule_id=rule.id) }}">Edytuj</a>
+                <form method="post" action="{{ url_for('admin.automation_delete', rule_id=rule.id) }}" data-confirm="Usunac regule automatyzacji?">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="btn btn-sm btn-outline-danger">Usun</button>
+                </form>
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="4" class="text-center text-secondary py-4">Brak zdefiniowanych regul.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="surface-card p-3 mt-4">
+  <h2 class="h5 mb-3">Historia wykonan</h2>
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Czas</th>
+          <th>Regula</th>
+          <th>Zdarzenie</th>
+          <th>Status</th>
+          <th>Komunikat</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for run in executions %}
+        <tr>
+          <td>{{ run.created_at.strftime('%Y-%m-%d %H:%M') if run.created_at else '-' }}</td>
+          <td>{{ run.rule.name if run.rule else '-' }}</td>
+          <td>{{ run.trigger_event }}</td>
+          <td>{{ run.status }}</td>
+          <td class="small">{{ run.message or '-' }}</td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="5" class="text-center text-secondary py-4">Brak wykonanych automatyzacji.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

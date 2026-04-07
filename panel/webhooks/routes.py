@@ -7,7 +7,13 @@ from panel.extensions import db
 from panel.forms.webhooks import WebhookEndpointForm
 from panel.models import Client, WebhookDelivery, WebhookEndpoint
 from panel.services.audit import log_activity
-from panel.services.webhooks import WEBHOOK_EVENT_TYPES, deliver_to_endpoint, normalize_event_types
+from panel.services.webhooks import (
+    WEBHOOK_EVENT_TYPES,
+    deliver_to_endpoint,
+    normalize_event_types,
+    process_webhook_retries,
+    replay_webhook_delivery,
+)
 from panel.utils.decorators import roles_required
 
 
@@ -169,4 +175,53 @@ def send_test(endpoint_id: int):
         flash(f"Webhook testowy wyslany poprawnie (HTTP {delivery.status_code}).", "success")
     else:
         flash(f"Webhook testowy nie powiodl sie (HTTP {delivery.status_code or 'blad polaczenia'}).", "warning")
+    return redirect(url_for("webhooks.index"))
+
+
+@webhooks_bp.route("/admin/webhooks/deliveries/<int:delivery_id>/replay", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def replay_delivery(delivery_id: int):
+    delivery = WebhookDelivery.query.get_or_404(delivery_id)
+    replayed = replay_webhook_delivery(delivery)
+    log_activity(
+        "webhooks.replay",
+        "webhook_delivery",
+        f"Ponowiono webhook delivery #{delivery.id}",
+        entity_id=delivery.id,
+        actor=current_user,
+        client=delivery.endpoint.client,
+        metadata={
+            "status_code": replayed.status_code,
+            "success": replayed.success,
+            "attempt_count": replayed.attempt_count,
+        },
+        success=replayed.success,
+    )
+    db.session.commit()
+
+    if replayed.success:
+        flash("Ponowienie webhooka zakonczone sukcesem.", "success")
+    else:
+        flash("Ponowienie webhooka nie powiodlo sie.", "warning")
+    return redirect(url_for("webhooks.index"))
+
+
+@webhooks_bp.route("/admin/webhooks/retries/process", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def process_retries():
+    summary = process_webhook_retries(limit=100)
+    log_activity(
+        "webhooks.retry_process",
+        "webhook_delivery",
+        "Przetworzono kolejke retry webhookow",
+        actor=current_user,
+        metadata=summary,
+    )
+    db.session.commit()
+    flash(
+        f"Retry webhookow: przetworzono={summary['processed']}, sukces={summary['delivered']}, dead-letter={summary['dead_lettered']}.",
+        "info",
+    )
     return redirect(url_for("webhooks.index"))

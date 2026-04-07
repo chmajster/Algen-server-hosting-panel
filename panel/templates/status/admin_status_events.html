@@ -1,0 +1,51 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Status page: zdarzenia</h1>
+  <a class="btn btn-primary" href="{{ url_for('status.admin_create') }}">Nowe zdarzenie</a>
+</div>
+
+<div class="surface-card p-3">
+  {% if events %}
+  <div class="table-responsive">
+    <table class="table align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Typ</th>
+          <th>Stan</th>
+          <th>Tytul</th>
+          <th>Start</th>
+          <th>Koniec</th>
+          <th>Publiczne</th>
+          <th>Komponenty</th>
+          <th>Akcje</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in events %}
+        <tr>
+          <td>{{ event.event_type }}</td>
+          <td>{{ event.state }}</td>
+          <td>{{ event.title }}</td>
+          <td>{{ event.starts_at.strftime('%Y-%m-%d %H:%M') if event.starts_at else '-' }}</td>
+          <td>{{ event.ends_at.strftime('%Y-%m-%d %H:%M') if event.ends_at else '-' }}</td>
+          <td>{{ 'tak' if event.is_public else 'nie' }}</td>
+          <td>{{ (event.affected_components_json or []) | join(', ') if event.affected_components_json else '-' }}</td>
+          <td class="d-flex gap-2 flex-wrap">
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('status.admin_edit', event_id=event.id) }}">Edytuj</a>
+            {% if event.state != 'resolved' %}
+            <form method="post" action="{{ url_for('status.admin_resolve', event_id=event.id) }}">
+              <button class="btn btn-sm btn-outline-success">Resolve</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="text-secondary mb-0">Brak zdarzen statusowych.</p>
+  {% endif %}
+</div>
+{% endblock %}

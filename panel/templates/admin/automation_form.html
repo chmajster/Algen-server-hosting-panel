@@ -1,0 +1,25 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-4">
+  <h1 class="h3 mb-4">{{ title }}</h1>
+  <form method="post" class="row g-3">
+    {{ form.hidden_tag() }}
+    <div class="col-md-6">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control") }}</div>
+    <div class="col-md-6">{{ form.trigger_event.label(class="form-label") }}{{ form.trigger_event(class="form-control", placeholder="billing.payment_failed") }}</div>
+    <div class="col-12">{{ form.description.label(class="form-label") }}{{ form.description(class="form-control") }}</div>
+    <div class="col-12">{{ form.conditions_json.label(class="form-label") }}{{ form.conditions_json(class="form-control", rows="6") }}</div>
+    <div class="col-12">{{ form.actions_json.label(class="form-label") }}{{ form.actions_json(class="form-control", rows="8") }}</div>
+    <div class="col-md-6 form-check ms-3">{{ form.stop_on_match(class="form-check-input") }} {{ form.stop_on_match.label(class="form-check-label") }}</div>
+    <div class="col-md-6 form-check ms-3">{{ form.is_active(class="form-check-input") }} {{ form.is_active.label(class="form-check-label") }}</div>
+    <div class="col-12 d-flex gap-2">
+      <button class="btn btn-primary">{{ form.submit.label.text }}</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('admin.automations') }}">Anuluj</a>
+    </div>
+  </form>
+
+  <div class="alert alert-info mt-4 mb-0 small">
+    Przyklad warunku: {"field": "billing_status", "equals": "overdue"}<br>
+    Przyklad akcji: [{"type": "log", "message": "Wykryto overdue"}, {"type": "webhook", "event": "automation.overdue"}]
+  </div>
+</div>
+{% endblock %}

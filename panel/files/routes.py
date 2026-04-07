@@ -19,11 +19,41 @@ from panel.services.files import (
     safe_join,
     write_text_file,
 )
+from panel.services.resource_limits import (
+    estimate_client_live_disk_mb,
+    estimate_client_live_inode_count,
+    estimate_upload_size,
+    resource_usage_report,
+)
 from panel.utils.decorators import active_account_required, roles_required
 from panel.utils.query import current_client
 
 
 files_bp = Blueprint("files", __name__)
+
+
+def _enforce_storage_growth_limits(client, *, delta_bytes: int = 0, delta_inodes: int = 0) -> None:
+    report = resource_usage_report(client)
+    disk_metric = report.get("disk_mb", {})
+    inode_metric = report.get("inode_count", {})
+
+    hard_disk = disk_metric.get("hard_limit")
+    if hard_disk is not None:
+        current_disk = estimate_client_live_disk_mb(client)
+        projected_disk = current_disk + (max(0, delta_bytes) / (1024 * 1024))
+        if projected_disk >= hard_disk:
+            raise FileManagerError(
+                f"Przekroczono twardy limit dysku ({round(projected_disk, 2)} MB / {hard_disk} MB)."
+            )
+
+    hard_inode = inode_metric.get("hard_limit")
+    if hard_inode is not None:
+        current_inodes = estimate_client_live_inode_count(client)
+        projected_inodes = current_inodes + max(0, delta_inodes)
+        if projected_inodes >= hard_inode:
+            raise FileManagerError(
+                f"Przekroczono twardy limit inodow ({projected_inodes} / {int(hard_inode)})."
+            )
 
 
 @files_bp.route("/client/files", methods=["GET", "POST"])
@@ -67,6 +97,8 @@ def upload():
     if form.validate_on_submit():
         root = client_root(client.id)
         try:
+            upload_size = estimate_upload_size(form.file.data)
+            _enforce_storage_growth_limits(client, delta_bytes=upload_size, delta_inodes=1)
             save_upload(root, form.target_dir.data or "", form.file.data)
             log_activity("files.upload", "file", f"Wysłano plik do {form.target_dir.data or '/'}", client=client)
             flash("Plik został wysłany.", "success")
@@ -85,6 +117,7 @@ def folder():
     if form.validate_on_submit():
         root = client_root(client.id)
         try:
+            _enforce_storage_growth_limits(client, delta_bytes=0, delta_inodes=1)
             create_folder(root, form.path.data)
             log_activity("files.mkdir", "directory", f"Utworzono katalog {form.path.data}", client=client)
             flash("Folder został utworzony.", "success")
@@ -103,6 +136,12 @@ def save_text():
     if form.validate_on_submit():
         root = client_root(client.id)
         try:
+            target = safe_join(root, form.path.data)
+            previous_size = target.stat().st_size if target.exists() and target.is_file() else 0
+            new_size = len((form.content.data or "").encode("utf-8"))
+            delta_bytes = max(0, new_size - previous_size)
+            delta_inodes = 0 if target.exists() else 1
+            _enforce_storage_growth_limits(client, delta_bytes=delta_bytes, delta_inodes=delta_inodes)
             write_text_file(root, form.path.data, form.content.data)
             log_activity("files.save_text", "file", f"Zapisano plik {form.path.data}", client=client)
             flash("Plik został zapisany.", "success")

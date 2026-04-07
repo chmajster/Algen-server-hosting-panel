@@ -1,0 +1,64 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-4">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h1 class="h3 mb-0">Aktywne sesje</h1>
+    <form method="post" action="{{ url_for('auth.logout_all_sessions') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-outline-danger">Wyloguj wszystkie inne sesje</button>
+    </form>
+  </div>
+
+  <p class="text-secondary">Przegladaj i cofaj aktywne sesje logowania dla tego konta.</p>
+
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Adres IP</th>
+          <th>Agent</th>
+          <th>Utworzona</th>
+          <th>Ostatnia aktywnosc</th>
+          <th>Cofnieta</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in sessions %}
+        <tr>
+          <td>
+            {% if current_session_id == row.id and not row.revoked_at %}
+            <span class="badge text-bg-success">Biezaca</span>
+            {% elif row.revoked_at %}
+            <span class="badge text-bg-secondary">Cofnieta</span>
+            {% else %}
+            <span class="badge text-bg-info">Aktywna</span>
+            {% endif %}
+          </td>
+          <td>{{ row.ip_address or '-' }}</td>
+          <td class="small">{{ row.user_agent or '-' }}</td>
+          <td>{{ row.created_at.strftime('%Y-%m-%d %H:%M') if row.created_at else '-' }}</td>
+          <td>{{ row.last_activity_at.strftime('%Y-%m-%d %H:%M') if row.last_activity_at else '-' }}</td>
+          <td>{{ row.revoked_at.strftime('%Y-%m-%d %H:%M') if row.revoked_at else '-' }}</td>
+          <td>
+            {% if not row.revoked_at and current_session_id != row.id %}
+            <form method="post" action="{{ url_for('auth.revoke_user_session', session_id=row.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn-sm btn-outline-danger">Cofnij</button>
+            </form>
+            {% else %}
+            -
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="7" class="text-center text-secondary py-4">Brak sesji do wyswietlenia.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
