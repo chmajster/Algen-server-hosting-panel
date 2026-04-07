@@ -21,6 +21,7 @@ def seed_defaults(
 ) -> User:
     roles = {
         "administrator": Role.query.filter_by(name="administrator").first(),
+        "operator": Role.query.filter_by(name="operator").first(),
         "client": Role.query.filter_by(name="client").first(),
     }
     for name in roles:

@@ -74,6 +74,7 @@ def register_blueprints(app: Flask) -> None:
     from panel.mail.routes import mail_bp
     from panel.monitoring.routes import monitoring_bp
     from panel.ssl.routes import ssl_bp
+    from panel.tickets.routes import tickets_bp
 
     for blueprint in [
         auth_bp,
@@ -90,6 +91,7 @@ def register_blueprints(app: Flask) -> None:
         files_bp,
         monitoring_bp,
         hosts_bp,
+        tickets_bp,
     ]:
         app.register_blueprint(blueprint)
 
@@ -147,6 +149,40 @@ def register_cli(app: Flask) -> None:
         user.set_password(password)
         db.session.commit()
         click.echo(f"Administrator {username} zostal zapisany.")
+
+    @app.cli.command("create-operator")
+    @click.option("--username", required=True)
+    @click.option("--password", required=True)
+    @click.option("--email", required=True)
+    def create_operator(username: str, password: str, email: str):
+        from panel.models import Role, User
+
+        role = Role.query.filter_by(name="operator").first()
+        if role is None:
+            role = Role(name="operator", description="Operator")
+            db.session.add(role)
+            db.session.flush()
+        user = User.query.filter_by(username=username).first()
+        email_owner = User.query.filter_by(email=email).first()
+        if email_owner is not None and (user is None or email_owner.id != user.id):
+            raise click.ClickException(f"Adres e-mail {email} jest juz uzywany przez innego uzytkownika.")
+        if user is None:
+            user = User(
+                role=role,
+                username=username,
+                email=email,
+                first_name="Operator",
+                last_name="User",
+                status="active",
+            )
+            db.session.add(user)
+        else:
+            user.role = role
+            user.email = email
+            user.status = "active"
+        user.set_password(password)
+        db.session.commit()
+        click.echo(f"Operator {username} zostal zapisany.")
 
     @app.cli.command("run-billing")
     def run_billing():

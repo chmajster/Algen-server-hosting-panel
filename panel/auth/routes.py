@@ -163,7 +163,7 @@ def _verify_pending_email_code(user: User, code: str | None) -> tuple[bool, str 
 
 
 def _post_login_redirect(user: User, next_url: str | None) -> str:
-    return next_url or url_for("admin.dashboard" if user.has_role("administrator") else "client.dashboard")
+    return next_url or url_for("admin.dashboard" if user.is_staff else "client.dashboard")
 
 
 def _complete_login(
@@ -194,7 +194,7 @@ def register():
     if not _registration_available():
         abort(404)
     if current_user.is_authenticated:
-        return redirect(url_for("admin.dashboard" if current_user.has_role("administrator") else "client.dashboard"))
+        return redirect(url_for("admin.dashboard" if current_user.is_staff else "client.dashboard"))
 
     form = RegisterForm()
     form.plan_id.choices = _active_plan_choices()
@@ -294,7 +294,7 @@ def register():
 )
 def login():
     if current_user.is_authenticated:
-        return redirect(url_for("admin.dashboard" if current_user.has_role("administrator") else "client.dashboard"))
+        return redirect(url_for("admin.dashboard" if current_user.is_staff else "client.dashboard"))
 
     if request.method == "GET":
         _clear_pending_login_state()
@@ -387,7 +387,7 @@ def login():
 )
 def login_2fa():
     if current_user.is_authenticated:
-        return redirect(url_for("admin.dashboard" if current_user.has_role("administrator") else "client.dashboard"))
+        return redirect(url_for("admin.dashboard" if current_user.is_staff else "client.dashboard"))
 
     pending_user_id = session.get("pending_2fa_user_id")
     if not pending_user_id:

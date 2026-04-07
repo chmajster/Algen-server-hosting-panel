@@ -13,7 +13,7 @@ class UserForm(FlaskForm):
     password = PasswordField("Haslo", validators=strong_password_validators(required=False))
     role = SelectField(
         "Rola",
-        choices=[("administrator", "Administrator"), ("client", "Klient")],
+        choices=[("administrator", "Administrator"), ("operator", "Operator"), ("client", "Klient")],
         validators=[DataRequired()],
     )
     status = SelectField(

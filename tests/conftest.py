@@ -42,8 +42,9 @@ def app():
     with app.app_context():
         db.create_all()
         admin_role = Role(name="administrator", description="Admin")
+        operator_role = Role(name="operator", description="Operator")
         client_role = Role(name="client", description="Client")
-        db.session.add_all([admin_role, client_role])
+        db.session.add_all([admin_role, operator_role, client_role])
         admin = User(
             role=admin_role,
             username="admin",
@@ -53,6 +54,15 @@ def app():
             status="active",
         )
         admin.set_password("Admin123!")
+        operator = User(
+            role=operator_role,
+            username="operator",
+            email="operator@test.local",
+            first_name="Operator",
+            last_name="User",
+            status="active",
+        )
+        operator.set_password("Operator123!")
         client_user = User(
             role=client_role,
             username="client",
@@ -64,7 +74,7 @@ def app():
         client_user.set_password("Client123!")
         client = Client(user=client_user, company_name="Test Client", resource_limits={"domains": 3})
         client.balance = ClientBalance(balance=50, currency="PLN")
-        db.session.add_all([admin, client_user, client])
+        db.session.add_all([admin, operator, client_user, client])
         db.session.commit()
         yield app
         db.session.remove()

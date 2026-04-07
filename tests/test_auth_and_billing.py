@@ -18,6 +18,8 @@ from panel.models import (
     ServicePlan,
     Subdomain,
     SystemSetting,
+    Ticket,
+    TicketMessage,
     User,
 )
 from panel.seed import seed_defaults
@@ -315,6 +317,124 @@ def test_admin_dashboard_loads(client):
     response = client.get("/admin/")
     assert response.status_code == 200
     assert "Ostatnie logi operacji" in response.get_data(as_text=True)
+
+
+def test_operator_can_open_admin_dashboard(client):
+    client.post(
+        "/auth/login",
+        data={"username": "operator", "password": "Operator123!"},
+        follow_redirects=True,
+    )
+    response = client.get("/admin/")
+    assert response.status_code == 200
+    assert "Ostatnie logi operacji" in response.get_data(as_text=True)
+
+
+def test_client_and_operator_can_communicate_via_tickets(client, app):
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+    create_response = client.post(
+        "/client/tickets/new",
+        data={
+            "subject": "Problem z domena",
+            "category": "hosting",
+            "priority": "high",
+            "message": "Po zmianie DNS strona nie dziala.",
+        },
+        follow_redirects=True,
+    )
+    assert create_response.status_code == 200
+    assert "Ticket zostal utworzony" in create_response.get_data(as_text=True)
+
+    with app.app_context():
+        ticket = Ticket.query.order_by(Ticket.id.desc()).first()
+        assert ticket is not None
+        ticket_id = ticket.id
+        assert ticket.status == "open"
+        assert TicketMessage.query.filter_by(ticket_id=ticket.id).count() == 1
+
+    client.get("/auth/logout", follow_redirects=True)
+    client.post(
+        "/auth/login",
+        data={"username": "operator", "password": "Operator123!"},
+        follow_redirects=True,
+    )
+    reply_response = client.post(
+        f"/admin/tickets/{ticket_id}",
+        data={
+            "reply-message": "Dziekujemy, sprawdzamy konfiguracje DNS po naszej stronie.",
+            "reply-submit": "1",
+        },
+        follow_redirects=True,
+    )
+    assert reply_response.status_code == 200
+    assert "Odpowiedz zostala wyslana" in reply_response.get_data(as_text=True)
+
+    with app.app_context():
+        ticket = Ticket.query.get(ticket_id)
+        assert ticket is not None
+        assert ticket.status == "answered"
+        messages = TicketMessage.query.filter_by(ticket_id=ticket.id).order_by(TicketMessage.id.asc()).all()
+        assert len(messages) == 2
+        assert messages[0].author.username == "client"
+        assert messages[1].author.username == "operator"
+
+
+def test_ticket_notifications_send_to_staff_and_client(client, app, monkeypatch):
+    app.config["TICKETS_EMAIL_NOTIFICATIONS_ENABLED"] = True
+    sent_messages: list[dict[str, str]] = []
+
+    def fake_send_plain_email(*, to_email: str, subject: str, body: str):
+        sent_messages.append({"to": to_email, "subject": subject, "body": body})
+        return None
+
+    monkeypatch.setattr("panel.services.ticket_notifications.send_plain_email", fake_send_plain_email)
+
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+    client.post(
+        "/client/tickets/new",
+        data={
+            "subject": "Awaria SMTP",
+            "category": "mail",
+            "priority": "normal",
+            "message": "Wiadomosci nie wychodza od rana.",
+        },
+        follow_redirects=True,
+    )
+
+    with app.app_context():
+        ticket = Ticket.query.order_by(Ticket.id.desc()).first()
+        assert ticket is not None
+        ticket_id = ticket.id
+
+    staff_recipients = {item["to"] for item in sent_messages}
+    assert "admin@test.local" in staff_recipients
+    assert "operator@test.local" in staff_recipients
+
+    sent_messages.clear()
+    client.get("/auth/logout", follow_redirects=True)
+    client.post(
+        "/auth/login",
+        data={"username": "operator", "password": "Operator123!"},
+        follow_redirects=True,
+    )
+    client.post(
+        f"/admin/tickets/{ticket_id}",
+        data={
+            "reply-message": "Sprawdzilismy logi i przywrocilismy kolejke.",
+            "reply-submit": "1",
+        },
+        follow_redirects=True,
+    )
+
+    assert any(item["to"] == "client@test.local" for item in sent_messages)
 
 
 def test_admin_smoke_test_page_loads(client):

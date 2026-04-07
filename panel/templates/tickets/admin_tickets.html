@@ -1,0 +1,49 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">Tickety klientow</h1>
+  <div class="btn-group btn-group-sm" role="group" aria-label="Filtr statusu">
+    <a class="btn {% if not status_filter %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets') }}">Wszystkie</a>
+    <a class="btn {% if status_filter == 'open' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets', status='open') }}">Otwarte</a>
+    <a class="btn {% if status_filter == 'pending' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets', status='pending') }}">Oczekuje</a>
+    <a class="btn {% if status_filter == 'answered' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets', status='answered') }}">Odpowiedziane</a>
+    <a class="btn {% if status_filter == 'closed' %}btn-primary{% else %}btn-outline-primary{% endif %}" href="{{ url_for('tickets.admin_tickets', status='closed') }}">Zamkniete</a>
+  </div>
+</div>
+<div class="surface-card p-3">
+  <div class="table-responsive">
+    <table class="table align-middle">
+      <thead>
+        <tr>
+          <th>Numer</th>
+          <th>Klient</th>
+          <th>Temat</th>
+          <th>Status</th>
+          <th>Priorytet</th>
+          <th>Przypisany</th>
+          <th>Aktualizacja</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for ticket in tickets %}
+        <tr>
+          <td>{{ ticket.display_number }}</td>
+          <td>{{ ticket.client.user.username }}</td>
+          <td>{{ ticket.subject }}</td>
+          <td>{{ ticket.status }}</td>
+          <td>{{ ticket.priority }}</td>
+          <td>{{ ticket.assigned_to.username if ticket.assigned_to else '-' }}</td>
+          <td>{{ (ticket.last_message_at or ticket.updated_at).strftime('%Y-%m-%d %H:%M') }}</td>
+          <td class="text-end"><a class="btn btn-sm btn-outline-primary" href="{{ url_for('tickets.admin_ticket_view', ticket_id=ticket.id) }}">Otworz</a></td>
+        </tr>
+        {% else %}
+        <tr>
+          <td colspan="8" class="text-center text-secondary py-4">Brak ticketow.</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

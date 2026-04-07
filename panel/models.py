@@ -67,6 +67,27 @@ class User(UserMixin, TimestampMixin, db.Model):
         back_populates="actor",
         foreign_keys="ActivityLog.actor_user_id",
     )
+    created_tickets = db.relationship(
+        "Ticket",
+        back_populates="created_by",
+        foreign_keys="Ticket.created_by_user_id",
+    )
+    assigned_tickets = db.relationship(
+        "Ticket",
+        back_populates="assigned_to",
+        foreign_keys="Ticket.assigned_to_user_id",
+    )
+    ticket_messages = db.relationship(
+        "TicketMessage",
+        back_populates="author",
+        foreign_keys="TicketMessage.author_user_id",
+    )
+    api_tokens = db.relationship(
+        "ApiToken",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        foreign_keys="ApiToken.user_id",
+    )
 
     def set_password(self, password: str) -> None:
         self.password_hash = bcrypt.generate_password_hash(password).decode("utf-8")
@@ -80,6 +101,13 @@ class User(UserMixin, TimestampMixin, db.Model):
 
     def has_role(self, role_name: str) -> bool:
         return bool(self.role and self.role.name == role_name)
+
+    def has_any_role(self, *role_names: str) -> bool:
+        return bool(self.role and self.role.name in set(role_names))
+
+    @property
+    def is_staff(self) -> bool:
+        return self.has_any_role("administrator", "operator")
 
 
 @login_manager.user_loader
@@ -132,6 +160,10 @@ class Client(TimestampMixin, db.Model):
     mailboxes = db.relationship("Mailbox", back_populates="client", cascade="all, delete-orphan")
     backups = db.relationship("Backup", back_populates="client", cascade="all, delete-orphan")
     online_payments = db.relationship("OnlinePayment", back_populates="client", cascade="all, delete-orphan")
+    tickets = db.relationship("Ticket", back_populates="client", cascade="all, delete-orphan")
+    resource_samples = db.relationship("ClientResourceSample", back_populates="client", cascade="all, delete-orphan")
+    restore_jobs = db.relationship("BackupRestoreJob", back_populates="client", cascade="all, delete-orphan")
+    webhook_endpoints = db.relationship("WebhookEndpoint", back_populates="client", cascade="all, delete-orphan")
 
 
 class ClientBalance(TimestampMixin, db.Model):
@@ -483,6 +515,162 @@ class Backup(TimestampMixin, db.Model):
     database = db.relationship("HostingDatabase")
 
 
+class Ticket(TimestampMixin, db.Model):
+    __tablename__ = "tickets"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    assigned_to_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    subject = db.Column(db.String(200), nullable=False)
+    category = db.Column(db.String(64), nullable=True, index=True)
+    priority = db.Column(db.String(16), nullable=False, default="normal", index=True)
+    status = db.Column(db.String(32), nullable=False, default="open", index=True)
+    last_message_at = db.Column(db.DateTime, nullable=True, index=True)
+    first_response_at = db.Column(db.DateTime, nullable=True, index=True)
+    first_response_due_at = db.Column(db.DateTime, nullable=True, index=True)
+    escalated_at = db.Column(db.DateTime, nullable=True, index=True)
+    closed_at = db.Column(db.DateTime, nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    client = db.relationship("Client", back_populates="tickets")
+    created_by = db.relationship("User", foreign_keys=[created_by_user_id], back_populates="created_tickets")
+    assigned_to = db.relationship("User", foreign_keys=[assigned_to_user_id], back_populates="assigned_tickets")
+    messages = db.relationship(
+        "TicketMessage",
+        back_populates="ticket",
+        cascade="all, delete-orphan",
+        order_by="TicketMessage.created_at.asc()",
+    )
+    attachments = db.relationship(
+        "TicketAttachment",
+        back_populates="ticket",
+        cascade="all, delete-orphan",
+        order_by="TicketAttachment.created_at.asc()",
+    )
+
+    @property
+    def display_number(self) -> str:
+        if self.id is None:
+            return "TKT-NEW"
+        return f"TKT-{self.id:06d}"
+
+
+class TicketMessage(TimestampMixin, db.Model):
+    __tablename__ = "ticket_messages"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id"), nullable=False, index=True)
+    author_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    message = db.Column(db.Text, nullable=False)
+    is_internal = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    ticket = db.relationship("Ticket", back_populates="messages")
+    author = db.relationship("User", back_populates="ticket_messages", foreign_keys=[author_user_id])
+    attachments = db.relationship("TicketAttachment", back_populates="ticket_message", cascade="all, delete-orphan")
+
+
+class TicketAttachment(TimestampMixin, db.Model):
+    __tablename__ = "ticket_attachments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_id = db.Column(db.Integer, db.ForeignKey("tickets.id"), nullable=False, index=True)
+    ticket_message_id = db.Column(db.Integer, db.ForeignKey("ticket_messages.id"), nullable=True, index=True)
+    uploaded_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    original_filename = db.Column(db.String(255), nullable=False)
+    storage_path = db.Column(db.String(1024), nullable=False)
+    mime_type = db.Column(db.String(120), nullable=True)
+    size_bytes = db.Column(db.BigInteger, nullable=False, default=0)
+
+    ticket = db.relationship("Ticket", back_populates="attachments")
+    ticket_message = db.relationship("TicketMessage", back_populates="attachments")
+    uploaded_by = db.relationship("User")
+
+
+class ClientResourceSample(TimestampMixin, db.Model):
+    __tablename__ = "client_resource_samples"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
+    cpu_percent = db.Column(db.Numeric(7, 2), nullable=True)
+    memory_mb = db.Column(db.Numeric(12, 2), nullable=True)
+    memory_limit_mb = db.Column(db.Numeric(12, 2), nullable=True)
+    disk_mb = db.Column(db.Numeric(12, 2), nullable=True)
+    inode_count = db.Column(db.BigInteger, nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    client = db.relationship("Client", back_populates="resource_samples")
+
+
+class BackupRestoreJob(TimestampMixin, db.Model):
+    __tablename__ = "backup_restore_jobs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
+    backup_id = db.Column(db.Integer, db.ForeignKey("backups.id"), nullable=False, index=True)
+    requested_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    status = db.Column(db.String(32), nullable=False, default="queued", index=True)
+    restore_type = db.Column(db.String(32), nullable=False, default="files")
+    target_path = db.Column(db.String(1024), nullable=True)
+    message = db.Column(db.String(500), nullable=True)
+    started_at = db.Column(db.DateTime, nullable=True)
+    finished_at = db.Column(db.DateTime, nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    client = db.relationship("Client", back_populates="restore_jobs")
+    backup = db.relationship("Backup")
+    requested_by = db.relationship("User")
+
+
+class ApiToken(TimestampMixin, db.Model):
+    __tablename__ = "api_tokens"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    token_prefix = db.Column(db.String(24), nullable=False, index=True)
+    token_hash = db.Column(db.String(128), nullable=False)
+    last_used_at = db.Column(db.DateTime, nullable=True)
+    revoked_at = db.Column(db.DateTime, nullable=True, index=True)
+
+    user = db.relationship("User", back_populates="api_tokens")
+
+
+class WebhookEndpoint(TimestampMixin, db.Model):
+    __tablename__ = "webhook_endpoints"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=True, index=True)
+    created_by_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    name = db.Column(db.String(120), nullable=False)
+    target_url = db.Column(db.String(500), nullable=False)
+    secret = db.Column(db.String(255), nullable=True)
+    event_types_json = db.Column(db.JSON, nullable=False, default=list)
+    is_active = db.Column(db.Boolean, nullable=False, default=True, index=True)
+    last_error = db.Column(db.String(500), nullable=True)
+    last_success_at = db.Column(db.DateTime, nullable=True)
+
+    client = db.relationship("Client", back_populates="webhook_endpoints")
+    created_by = db.relationship("User")
+    deliveries = db.relationship("WebhookDelivery", back_populates="endpoint", cascade="all, delete-orphan")
+
+
+class WebhookDelivery(TimestampMixin, db.Model):
+    __tablename__ = "webhook_deliveries"
+
+    id = db.Column(db.Integer, primary_key=True)
+    endpoint_id = db.Column(db.Integer, db.ForeignKey("webhook_endpoints.id"), nullable=False, index=True)
+    event_type = db.Column(db.String(120), nullable=False, index=True)
+    payload_json = db.Column(db.JSON, nullable=True)
+    status_code = db.Column(db.Integer, nullable=True)
+    success = db.Column(db.Boolean, nullable=False, default=False, index=True)
+    response_excerpt = db.Column(db.String(500), nullable=True)
+    attempted_at = db.Column(db.DateTime, nullable=True, index=True)
+
+    endpoint = db.relationship("WebhookEndpoint", back_populates="deliveries")
+
+
 class ActivityLog(TimestampMixin, db.Model):
     __tablename__ = "activity_logs"
 
@@ -547,3 +735,11 @@ Index("ix_billing_cycles_due_status", BillingCycle.due_date, BillingCycle.status
 Index("ix_client_services_type_status", ClientService.service_type, ClientService.status)
 Index("ix_hosts_changes_host_action", HostsFileChange.hostname, HostsFileChange.action)
 Index("ix_online_payments_client_status", OnlinePayment.client_id, OnlinePayment.status)
+Index("ix_tickets_client_status", Ticket.client_id, Ticket.status)
+Index("ix_tickets_status_priority", Ticket.status, Ticket.priority)
+Index("ix_ticket_messages_ticket_created", TicketMessage.ticket_id, TicketMessage.created_at)
+Index("ix_ticket_attachments_ticket_created", TicketAttachment.ticket_id, TicketAttachment.created_at)
+Index("ix_resource_samples_client_created", ClientResourceSample.client_id, ClientResourceSample.created_at)
+Index("ix_restore_jobs_client_status", BackupRestoreJob.client_id, BackupRestoreJob.status)
+Index("ix_api_tokens_user_revoked", ApiToken.user_id, ApiToken.revoked_at)
+Index("ix_webhooks_active_client", WebhookEndpoint.is_active, WebhookEndpoint.client_id)

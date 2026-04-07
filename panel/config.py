@@ -59,6 +59,19 @@ class Config:
     MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "true").lower() == "true"
     MAIL_USE_SSL = os.getenv("MAIL_USE_SSL", "false").lower() == "true"
     MAIL_FROM = os.getenv("MAIL_FROM", "")
+    TICKETS_EMAIL_NOTIFICATIONS_ENABLED = os.getenv("TICKETS_EMAIL_NOTIFICATIONS_ENABLED", "true").lower() == "true"
+    TICKETS_EMAIL_SUBJECT_NEW_CLIENT_TICKET = os.getenv(
+        "TICKETS_EMAIL_SUBJECT_NEW_CLIENT_TICKET",
+        "Nowy ticket klienta: {ticket}",
+    )
+    TICKETS_EMAIL_SUBJECT_CLIENT_REPLY = os.getenv(
+        "TICKETS_EMAIL_SUBJECT_CLIENT_REPLY",
+        "Nowa odpowiedz klienta: {ticket}",
+    )
+    TICKETS_EMAIL_SUBJECT_STAFF_REPLY = os.getenv(
+        "TICKETS_EMAIL_SUBJECT_STAFF_REPLY",
+        "Nowa odpowiedz supportu: {ticket}",
+    )
     BILLING_GRACE_DAYS = int(os.getenv("BILLING_GRACE_DAYS", "3"))
     BILLING_AUTO_RESUME = os.getenv("BILLING_AUTO_RESUME", "true").lower() == "true"
     ONLINE_PAYMENTS_ENABLED = os.getenv("ONLINE_PAYMENTS_ENABLED", "false").lower() == "true"

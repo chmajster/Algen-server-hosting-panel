@@ -1,0 +1,49 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3 mb-0">{{ ticket.display_number }} - {{ ticket.subject }}</h1>
+  {% if ticket.status != 'closed' %}
+  <form method="post" action="{{ url_for('tickets.client_ticket_close', ticket_id=ticket.id) }}">
+    <button class="btn btn-outline-danger btn-sm">Zamknij ticket</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <div class="row g-2 small">
+    <div class="col-12 col-md-3"><strong>Status:</strong> {{ ticket.status }}</div>
+    <div class="col-12 col-md-3"><strong>Priorytet:</strong> {{ ticket.priority }}</div>
+    <div class="col-12 col-md-3"><strong>Kategoria:</strong> {{ ticket.category or '-' }}</div>
+    <div class="col-12 col-md-3"><strong>Utworzono:</strong> {{ ticket.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
+  </div>
+</div>
+
+<div class="surface-card p-3 mb-3">
+  <h2 class="h5 mb-3">Wiadomosci</h2>
+  <div class="d-flex flex-column gap-3">
+    {% for message in ticket.messages %}
+    <div class="border rounded p-3 {% if message.author.has_role('client') %}bg-body{% else %}bg-light{% endif %}">
+      <div class="d-flex justify-content-between mb-2">
+        <strong>{{ message.author.full_name }} ({{ message.author.username }})</strong>
+        <small class="text-secondary">{{ message.created_at.strftime('%Y-%m-%d %H:%M') }}</small>
+      </div>
+      <div class="text-break" style="white-space: pre-wrap;">{{ message.message }}</div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+{% if ticket.status != 'closed' %}
+<div class="surface-card p-3">
+  <h2 class="h5 mb-3">Nowa odpowiedz</h2>
+  <form method="post">
+    {{ reply_form.hidden_tag() }}
+    <div class="mb-3">
+      {{ reply_form.message.label(class="form-label") }}
+      {{ reply_form.message(class="form-control", rows="6", placeholder="Napisz odpowiedz") }}
+    </div>
+    <button class="btn btn-primary">{{ reply_form.submit.label.text }}</button>
+  </form>
+</div>
+{% endif %}
+{% endblock %}

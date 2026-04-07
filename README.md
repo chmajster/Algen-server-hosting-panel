@@ -7,11 +7,13 @@ Installer został przebudowany tak, aby używał systemowego Pythona z repozytor
 ## Moduły
 
 - panel administratora i klienta
+- rola `operator` z dostepem do panelu administracyjnego (podobnie jak administrator)
 - publiczna rejestracja klienta z wyborem planu hostingu
 - uwierzytelnianie, role, sesje, CSRF i rate limiting logowania
 - opcjonalne 2FA (Google Authenticator lub kod e-mail) na poziomie konta uzytkownika
 - billing oparty o saldo klienta i cykle rozliczeń
 - opcjonalne platnosci online (provider Stripe lub mock do testow)
+- system ticketow klient <-> administrator/operator
 - domeny, subdomeny, bazy danych, FTP, DNS, SSL, poczta, backupy
 - instalacja i publikacja phpMyAdmin pod `/phpmyadmin/` (link z panelu admina i klienta)
 - 1 kontener Docker z Apache per klient, z automatyczna synchronizacja VirtualHostow
@@ -98,6 +100,25 @@ Konfiguracja `.env`:
 ```env
 SELF_REGISTRATION_ENABLED=true
 REGISTRATION_AUTO_LOGIN=true
+```
+
+## Tickety (klient <-> administrator/operator)
+
+Panel udostepnia prosty system ticketow:
+
+- klient tworzy ticket i prowadzi korespondencje z poziomu `Panel klienta -> Tickety`,
+- administrator i operator obsluguja wszystkie zgłoszenia w `Panel administracyjny -> Tickety`,
+- staff moze odpowiadac, zmieniac status, priorytet i przypisywac zgłoszenie do operatora,
+- klient moze zamknac ticket; nowa wiadomosc klienta ponownie otwiera zgłoszenie,
+- opcjonalnie system wysyla powiadomienia e-mail: do staff po wiadomosci klienta oraz do klienta po odpowiedzi staff.
+
+Konfiguracja `.env` dla powiadomien ticketow:
+
+```env
+TICKETS_EMAIL_NOTIFICATIONS_ENABLED=true
+TICKETS_EMAIL_SUBJECT_NEW_CLIENT_TICKET='Nowy ticket klienta: {ticket}'
+TICKETS_EMAIL_SUBJECT_CLIENT_REPLY='Nowa odpowiedz klienta: {ticket}'
+TICKETS_EMAIL_SUBJECT_STAFF_REPLY='Nowa odpowiedz supportu: {ticket}'
 ```
 
 ## Apache per klient (Docker)
@@ -348,6 +369,10 @@ MAIL_PASSWORD=
 MAIL_USE_TLS=true
 MAIL_USE_SSL=false
 MAIL_FROM='no-reply@example.com'
+TICKETS_EMAIL_NOTIFICATIONS_ENABLED=true
+TICKETS_EMAIL_SUBJECT_NEW_CLIENT_TICKET='Nowy ticket klienta: {ticket}'
+TICKETS_EMAIL_SUBJECT_CLIENT_REPLY='Nowa odpowiedz klienta: {ticket}'
+TICKETS_EMAIL_SUBJECT_STAFF_REPLY='Nowa odpowiedz supportu: {ticket}'
 
 ONLINE_PAYMENTS_ENABLED=false
 ONLINE_PAYMENTS_PROVIDER=stripe
@@ -365,7 +390,7 @@ STRIPE_WEBHOOK_TOLERANCE_SECONDS=300
 
 Uwagi:
 
-- dla 2FA e-mail wymagane jest skonfigurowanie SMTP (`MAIL_SERVER`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`),
+- dla 2FA e-mail i powiadomien ticketow wymagane jest skonfigurowanie SMTP (`MAIL_SERVER`, `MAIL_PORT`, `MAIL_USERNAME`, `MAIL_PASSWORD`),
 - provider `mock` pozwala przetestowac przeplyw checkout bez zewnetrznej bramki,
 - webhook Stripe jest obslugiwany pod adresem `POST /webhooks/stripe`,
 - przy Stripe rekomendowane jest ustawienie poprawnego HTTPS i `STRIPE_WEBHOOK_SECRET`.

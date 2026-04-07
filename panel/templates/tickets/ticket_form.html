@@ -1,0 +1,29 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="surface-card p-4">
+  <h1 class="h3 mb-4">{{ title }}</h1>
+  <form method="post" class="row g-3">
+    {{ form.hidden_tag() }}
+    <div class="col-12">
+      {{ form.subject.label(class="form-label") }}
+      {{ form.subject(class="form-control", placeholder="Krotki opis problemu") }}
+    </div>
+    <div class="col-12 col-md-6">
+      {{ form.category.label(class="form-label") }}
+      {{ form.category(class="form-select") }}
+    </div>
+    <div class="col-12 col-md-6">
+      {{ form.priority.label(class="form-label") }}
+      {{ form.priority(class="form-select") }}
+    </div>
+    <div class="col-12">
+      {{ form.message.label(class="form-label") }}
+      {{ form.message(class="form-control", rows="8", placeholder="Opisz problem lub pytanie") }}
+    </div>
+    <div class="col-12">
+      <button class="btn btn-primary">{{ form.submit.label.text }}</button>
+      <a class="btn btn-outline-secondary" href="{{ url_for('tickets.client_tickets') }}">Anuluj</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

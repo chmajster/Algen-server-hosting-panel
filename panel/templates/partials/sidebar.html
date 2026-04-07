@@ -1,11 +1,12 @@
 <div class="text-white mb-4">
   <h4 class="mb-1">{{ config.APP_NAME }}</h4>
-  <small class="text-white-50">{{ "Panel administratora" if current_user.has_role("administrator") else "Panel klienta" }}</small>
+  <small class="text-white-50">{{ "Panel administracyjny" if current_user.is_staff else "Panel klienta" }}</small>
 </div>
 <nav class="nav flex-column sidebar-nav">
-  {% if current_user.has_role("administrator") %}
+  {% if current_user.is_staff %}
     <a class="nav-link {% if request.endpoint == 'admin.dashboard' %}active{% endif %}" href="{{ url_for('admin.dashboard') }}">Dashboard</a>
     <a class="nav-link {% if request.endpoint == 'admin.users' %}active{% endif %}" href="{{ url_for('admin.users') }}">Uzytkownicy</a>
+    <a class="nav-link {% if request.endpoint in ['tickets.admin_tickets', 'tickets.admin_ticket_view'] %}active{% endif %}" href="{{ url_for('tickets.admin_tickets') }}">Tickety</a>
     <a class="nav-link {% if request.endpoint in ['billing.admin_plans', 'billing.admin_plan_create', 'billing.admin_plan_edit'] %}active{% endif %}" href="{{ url_for('billing.admin_plans') }}">Plany</a>
     <a class="nav-link {% if request.endpoint in ['billing.admin_services', 'billing.admin_service_create'] %}active{% endif %}" href="{{ url_for('billing.admin_services') }}">Uslugi</a>
     <a class="nav-link {% if request.endpoint in ['domains.admin_domains', 'domains.admin_domain_create', 'domains.admin_domain_edit'] %}active{% endif %}" href="{{ url_for('domains.admin_domains') }}">Domeny</a>
@@ -25,6 +26,7 @@
       {% endif %}
   {% else %}
     <a class="nav-link {% if request.endpoint == 'client.dashboard' %}active{% endif %}" href="{{ url_for('client.dashboard') }}">Dashboard</a>
+    <a class="nav-link {% if request.endpoint in ['tickets.client_tickets', 'tickets.client_ticket_create', 'tickets.client_ticket_view'] %}active{% endif %}" href="{{ url_for('tickets.client_tickets') }}">Tickety</a>
     <a class="nav-link {% if request.endpoint == 'billing.client_billing' %}active{% endif %}" href="{{ url_for('billing.client_billing') }}">Billing</a>
     <a class="nav-link {% if request.endpoint in ['domains.client_domains', 'domains.client_domain_edit'] %}active{% endif %}" href="{{ url_for('domains.client_domains') }}">Domeny</a>
     <a class="nav-link {% if request.endpoint in ['databases.client_databases', 'databases.client_database_edit', 'databases.client_database_user_create', 'databases.client_database_user_edit'] %}active{% endif %}" href="{{ url_for('databases.client_databases') }}">Bazy danych</a>
