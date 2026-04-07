@@ -25,6 +25,13 @@ def app():
             "SMOKE_TEST_API_TOKEN": "test-smoke-token",
             "SMOKE_TEST_API_ALLOWLIST": "127.0.0.1/32,::1/128",
             "SMOKE_TEST_API_RATELIMIT": "200 per minute",
+            "TWO_FACTOR_AVAILABLE": True,
+            "TWO_FACTOR_ISSUER": "Hosting Panel Test",
+            "ONLINE_PAYMENTS_ENABLED": False,
+            "ONLINE_PAYMENTS_PROVIDER": "mock",
+            "ONLINE_PAYMENTS_CURRENCY": "PLN",
+            "ONLINE_PAYMENTS_MIN_AMOUNT": "5.00",
+            "ONLINE_PAYMENTS_MAX_AMOUNT": "50000.00",
             "ADMIN_LOCAL_ONLY": True,
             "ADMIN_ALLOWED_NETWORKS": "127.0.0.1/32,::1/128",
         }

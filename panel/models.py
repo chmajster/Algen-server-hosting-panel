@@ -44,6 +44,9 @@ class User(UserMixin, TimestampMixin, db.Model):
     last_login_at = db.Column(db.DateTime, nullable=True)
     last_login_ip = db.Column(db.String(45), nullable=True)
     manual_lock_reason = db.Column(db.String(255), nullable=True)
+    two_factor_enabled = db.Column(db.Boolean, nullable=False, default=False)
+    two_factor_method = db.Column(db.String(16), nullable=False, default="totp")
+    two_factor_secret = db.Column(db.String(128), nullable=True)
 
     role = db.relationship("Role", back_populates="users")
     client_profile = db.relationship(
@@ -128,6 +131,7 @@ class Client(TimestampMixin, db.Model):
     dns_zones = db.relationship("DNSZone", back_populates="client", cascade="all, delete-orphan")
     mailboxes = db.relationship("Mailbox", back_populates="client", cascade="all, delete-orphan")
     backups = db.relationship("Backup", back_populates="client", cascade="all, delete-orphan")
+    online_payments = db.relationship("OnlinePayment", back_populates="client", cascade="all, delete-orphan")
 
 
 class ClientBalance(TimestampMixin, db.Model):
@@ -248,6 +252,26 @@ class PaymentSetting(TimestampMixin, db.Model):
     auto_resume = db.Column(db.Boolean, nullable=False, default=True)
 
     client = db.relationship("Client")
+
+
+class OnlinePayment(TimestampMixin, db.Model):
+    __tablename__ = "online_payments"
+
+    id = db.Column(db.Integer, primary_key=True)
+    client_id = db.Column(db.Integer, db.ForeignKey("clients.id"), nullable=False, index=True)
+    actor_user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=True, index=True)
+    amount = db.Column(db.Numeric(12, 2), nullable=False)
+    currency = db.Column(db.String(8), nullable=False, default="PLN")
+    provider = db.Column(db.String(32), nullable=False, default="stripe", index=True)
+    status = db.Column(db.String(32), nullable=False, default="pending", index=True)
+    description = db.Column(db.String(255), nullable=False)
+    external_id = db.Column(db.String(191), nullable=True, unique=True, index=True)
+    provider_event_id = db.Column(db.String(191), nullable=True)
+    completed_at = db.Column(db.DateTime, nullable=True)
+    metadata_json = db.Column(db.JSON, nullable=True)
+
+    client = db.relationship("Client", back_populates="online_payments")
+    actor = db.relationship("User")
 
 
 class Domain(TimestampMixin, db.Model):
@@ -522,3 +546,4 @@ Index("ix_activity_logs_entity", ActivityLog.entity_type, ActivityLog.entity_id)
 Index("ix_billing_cycles_due_status", BillingCycle.due_date, BillingCycle.status)
 Index("ix_client_services_type_status", ClientService.service_type, ClientService.status)
 Index("ix_hosts_changes_host_action", HostsFileChange.hostname, HostsFileChange.action)
+Index("ix_online_payments_client_status", OnlinePayment.client_id, OnlinePayment.status)

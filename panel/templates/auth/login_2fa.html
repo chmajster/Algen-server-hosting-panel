@@ -1,0 +1,20 @@
+{% extends "layouts/base.html" %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-md-7 col-lg-5 col-xl-4">
+    <div class="surface-card p-4 p-lg-5">
+      <h1 class="h3 mb-2">Weryfikacja 2FA</h1>
+      <p class="text-secondary mb-4">Podaj 6-cyfrowy kod z aplikacji uwierzytelniajacej, aby dokonczyc logowanie.</p>
+      <form method="post">
+        {{ form.hidden_tag() }}
+        <div class="mb-3">
+          {{ form.code.label(class="form-label") }}
+          {{ form.code(class="form-control", placeholder="123456", autocomplete="one-time-code", inputmode="numeric") }}
+        </div>
+        <button class="btn btn-primary w-100 mb-3">{{ form.submit.label.text }}</button>
+      </form>
+      <a class="btn btn-outline-secondary w-100" href="{{ url_for('auth.cancel_login_2fa') }}">Wroc do logowania</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

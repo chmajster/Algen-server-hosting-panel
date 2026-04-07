@@ -1,6 +1,6 @@
 from flask_wtf import FlaskForm
 from wtforms import BooleanField, PasswordField, StringField, SubmitField
-from wtforms.validators import DataRequired, Length
+from wtforms.validators import DataRequired, Length, Optional
 
 
 class LoginForm(FlaskForm):
@@ -8,3 +8,24 @@ class LoginForm(FlaskForm):
     password = PasswordField("Haslo", validators=[DataRequired(), Length(max=255)])
     remember_me = BooleanField("Zapamietaj mnie")
     submit = SubmitField("Zaloguj")
+
+
+class TwoFactorChallengeForm(FlaskForm):
+    code = StringField("Kod 2FA", validators=[DataRequired(), Length(min=6, max=12)])
+    submit = SubmitField("Zweryfikuj")
+
+
+class TwoFactorEnableTotpForm(FlaskForm):
+    code = StringField("Kod z aplikacji", validators=[DataRequired(), Length(min=6, max=12)])
+    submit = SubmitField("Wlacz Google Authenticator")
+
+
+class TwoFactorEnableEmailForm(FlaskForm):
+    password = PasswordField("Aktualne haslo", validators=[DataRequired(), Length(max=255)])
+    submit = SubmitField("Wlacz 2FA przez e-mail")
+
+
+class TwoFactorDisableForm(FlaskForm):
+    password = PasswordField("Aktualne haslo", validators=[DataRequired(), Length(max=255)])
+    code = StringField("Kod 2FA", validators=[Optional(), Length(min=6, max=12)])
+    submit = SubmitField("Wylacz 2FA")

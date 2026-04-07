@@ -1,9 +1,101 @@
 {% extends "layouts/base.html" %}
 {% block content %}
 <div class="row g-3 mb-3">
-  <div class="col-12 col-md-4"><div class="surface-card p-3"><div class="text-secondary">Saldo</div><div class="h3">{{ client.balance.balance }} {{ client.balance.currency }}</div></div></div>
-  <div class="col-12 col-md-4"><div class="surface-card p-3"><div class="text-secondary">Status</div><div class="h3">{{ client.billing_status }}</div></div></div>
-  <div class="col-12 col-md-4"><div class="surface-card p-3"><div class="text-secondary">Historia</div><div class="h3">{{ transactions|length }}</div></div></div>
+  <div class="col-12 col-md-4">
+    <div class="surface-card p-3">
+      <div class="text-secondary">Saldo</div>
+      <div class="h3">{{ client.balance.balance }} {{ client.balance.currency }}</div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="surface-card p-3">
+      <div class="text-secondary">Status</div>
+      <div class="h3">{{ client.billing_status }}</div>
+    </div>
+  </div>
+  <div class="col-12 col-md-4">
+    <div class="surface-card p-3">
+      <div class="text-secondary">Historia</div>
+      <div class="h3">{{ transactions|length }}</div>
+    </div>
+  </div>
 </div>
-<div class="surface-card p-3"><div class="table-responsive"><table class="table"><thead><tr><th>Data</th><th>Typ</th><th>Opis</th><th>Kwota</th><th>Saldo po</th></tr></thead><tbody>{% for tx in transactions %}<tr><td>{{ tx.created_at.strftime('%Y-%m-%d %H:%M') }}</td><td>{{ tx.transaction_type }}</td><td>{{ tx.description }}</td><td>{{ tx.amount }}</td><td>{{ tx.balance_after }}</td></tr>{% endfor %}</tbody></table></div></div>
+
+{% if online_payments_enabled %}
+<div class="surface-card p-3 mb-3">
+  <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-3">
+    <div>
+      <h5 class="mb-1">Doladuj saldo online</h5>
+      <p class="text-secondary mb-0">Provider: {{ online_payments_provider|upper }}. Funkcja jest opcjonalna i domyslnie wylaczona.</p>
+    </div>
+  </div>
+  <form method="post" action="{{ url_for('billing.client_topup_checkout') }}" class="row g-3 align-items-end">
+    {{ topup_form.hidden_tag() }}
+    <div class="col-12 col-md-4 col-lg-3">
+      {{ topup_form.amount.label(class="form-label") }}
+      {{ topup_form.amount(class="form-control", placeholder="np. 50.00") }}
+    </div>
+    <div class="col-12 col-md-auto">
+      {{ topup_form.submit(class="btn btn-primary") }}
+    </div>
+  </form>
+</div>
+
+{% if recent_online_payments %}
+<div class="surface-card p-3 mb-3">
+  <h5 class="mb-3">Ostatnie platnosci online</h5>
+  <div class="table-responsive">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Provider</th>
+          <th>Status</th>
+          <th>Kwota</th>
+          <th>Opis</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for payment in recent_online_payments %}
+        <tr>
+          <td>{{ payment.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ payment.provider }}</td>
+          <td>{{ payment.status }}</td>
+          <td>{{ payment.amount }} {{ payment.currency }}</td>
+          <td>{{ payment.description }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+
+<div class="surface-card p-3">
+  <div class="table-responsive">
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Data</th>
+          <th>Typ</th>
+          <th>Opis</th>
+          <th>Kwota</th>
+          <th>Saldo po</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tx in transactions %}
+        <tr>
+          <td>{{ tx.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+          <td>{{ tx.transaction_type }}</td>
+          <td>{{ tx.description }}</td>
+          <td>{{ tx.amount }}</td>
+          <td>{{ tx.balance_after }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
 {% endblock %}

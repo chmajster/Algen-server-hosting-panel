@@ -4,9 +4,22 @@ from decimal import Decimal
 from pathlib import Path
 
 from panel.extensions import db
-from panel.models import BillingTransaction, Client, DatabaseUser, Domain, HostingDatabase, Mailbox, SSLCertificate, Subdomain, SystemSetting, User
+from panel.models import (
+    BillingTransaction,
+    Client,
+    DatabaseUser,
+    Domain,
+    HostingDatabase,
+    Mailbox,
+    OnlinePayment,
+    SSLCertificate,
+    Subdomain,
+    SystemSetting,
+    User,
+)
 from panel.seed import seed_defaults
 from panel.services.billing import adjust_balance
+from panel.services.two_factor import current_totp, generate_two_factor_secret
 
 
 def test_login_success(client):
@@ -38,6 +51,104 @@ def test_login_remember_me_sets_remember_cookie(client):
     cookies = " ".join(response.headers.getlist("Set-Cookie"))
     assert response.status_code == 302
     assert "remember_token=" in cookies
+
+
+def test_login_requires_2fa_for_user_with_enabled_2fa(client, app):
+    with app.app_context():
+        user = User.query.filter_by(username="admin").first()
+        assert user is not None
+        secret = generate_two_factor_secret()
+        user.two_factor_enabled = True
+        user.two_factor_secret = secret
+        db.session.commit()
+
+    login_response = client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=False,
+    )
+    assert login_response.status_code == 302
+    assert login_response.headers.get("Location", "").startswith("/auth/2fa")
+
+    verify_response = client.post(
+        "/auth/2fa",
+        data={"code": current_totp(secret)},
+        follow_redirects=False,
+    )
+    assert verify_response.status_code == 302
+    assert verify_response.headers.get("Location", "").startswith("/admin/")
+
+
+def test_login_rejects_invalid_2fa_code(client, app):
+    with app.app_context():
+        user = User.query.filter_by(username="admin").first()
+        assert user is not None
+        user.two_factor_enabled = True
+        user.two_factor_secret = generate_two_factor_secret()
+        db.session.commit()
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=False,
+    )
+    response = client.post(
+        "/auth/2fa",
+        data={"code": "000000"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "Nieprawidlowy kod 2FA" in response.get_data(as_text=True)
+
+
+def test_user_can_enable_and_disable_2fa_in_settings(client, app):
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+
+    response = client.get("/auth/2fa/settings")
+    assert response.status_code == 200
+
+    with client.session_transaction() as session_data:
+        setup_secret = session_data.get("two_factor_setup_secret")
+    assert setup_secret
+
+    enable_response = client.post(
+        "/auth/2fa/settings",
+        data={
+            "enable-code": current_totp(setup_secret),
+            "enable-submit": "1",
+        },
+        follow_redirects=True,
+    )
+    assert enable_response.status_code == 200
+    assert "zostalo wlaczone" in enable_response.get_data(as_text=True)
+
+    with app.app_context():
+        user = User.query.filter_by(username="client").first()
+        assert user is not None
+        assert user.two_factor_enabled is True
+        user_secret = user.two_factor_secret
+
+    disable_response = client.post(
+        "/auth/2fa/settings",
+        data={
+            "disable-password": "Client123!",
+            "disable-code": current_totp(user_secret),
+            "disable-submit": "1",
+        },
+        follow_redirects=True,
+    )
+    assert disable_response.status_code == 200
+    assert "zostalo wylaczone" in disable_response.get_data(as_text=True)
+
+    with app.app_context():
+        user = User.query.filter_by(username="client").first()
+        assert user is not None
+        assert user.two_factor_enabled is False
+        assert user.two_factor_secret is None
 
 
 def test_login_rejects_external_next_redirect(client):
@@ -462,6 +573,32 @@ def test_balance_adjustment_creates_transaction(app):
         tx = BillingTransaction.query.order_by(BillingTransaction.id.desc()).first()
         assert tx.amount == Decimal("25.00")
         assert client_profile.balance.balance == Decimal("75.00")
+
+
+def test_client_can_topup_balance_with_mock_provider(client, app):
+    app.config["ONLINE_PAYMENTS_ENABLED"] = True
+    app.config["ONLINE_PAYMENTS_PROVIDER"] = "mock"
+
+    client.post(
+        "/auth/login",
+        data={"username": "client", "password": "Client123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        "/client/billing/topup",
+        data={"amount": "25.00"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    assert "Platnosc testowa zostala zaksiegowana" in response.get_data(as_text=True)
+
+    with app.app_context():
+        client_profile = Client.query.first()
+        assert client_profile is not None
+        assert client_profile.balance.balance == Decimal("75.00")
+        payment = OnlinePayment.query.order_by(OnlinePayment.id.desc()).first()
+        assert payment is not None
+        assert payment.status == "completed"
 
 
 def test_admin_can_change_css_framework(client, app):

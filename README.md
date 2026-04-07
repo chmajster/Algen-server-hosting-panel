@@ -8,7 +8,9 @@ Installer został przebudowany tak, aby używał systemowego Pythona z repozytor
 
 - panel administratora i klienta
 - uwierzytelnianie, role, sesje, CSRF i rate limiting logowania
+- opcjonalne 2FA (TOTP) na poziomie konta uzytkownika
 - billing oparty o saldo klienta i cykle rozliczeń
+- opcjonalne platnosci online (provider Stripe lub mock do testow)
 - domeny, subdomeny, bazy danych, FTP, DNS, SSL, poczta, backupy
 - instalacja i publikacja phpMyAdmin pod `/phpmyadmin/` (link z panelu admina i klienta)
 - 1 kontener Docker z Apache per klient, z automatyczna synchronizacja VirtualHostow
@@ -290,6 +292,44 @@ AUTOUPDATE_REPO_URL=https://github.com/chmajster/Algen-server-hosting-panel
 AUTOUPDATE_BRANCH=main
 AUTOUPDATE_INTERVAL='*:0/15'
 ```
+
+## Opcjonalne 2FA i platnosci online
+
+Nowe funkcje sa dostepne, ale domyslnie **wylaczone**:
+
+- 2FA (TOTP) dla logowania uzytkownika,
+- doladowanie salda klienta przez platnosc online.
+
+Po wlaczeniu `TWO_FACTOR_AVAILABLE=true`, kazdy uzytkownik moze sam wlaczyc 2FA w panelu (menu `2FA`).
+
+Po wlaczeniu `ONLINE_PAYMENTS_ENABLED=true`, klient dostaje formularz doladowania salda na stronie `Billing`.
+
+Konfiguracja `.env`:
+
+```env
+TWO_FACTOR_AVAILABLE=false
+TWO_FACTOR_ISSUER='Hosting Panel'
+TWO_FACTOR_LOGIN_RATELIMIT='10 per 10 minutes'
+
+ONLINE_PAYMENTS_ENABLED=false
+ONLINE_PAYMENTS_PROVIDER=stripe
+ONLINE_PAYMENTS_CURRENCY=PLN
+ONLINE_PAYMENTS_MIN_AMOUNT=5.00
+ONLINE_PAYMENTS_MAX_AMOUNT=50000.00
+ONLINE_PAYMENTS_SUCCESS_URL=
+ONLINE_PAYMENTS_CANCEL_URL=
+
+STRIPE_SECRET_KEY=
+STRIPE_PUBLISHABLE_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_WEBHOOK_TOLERANCE_SECONDS=300
+```
+
+Uwagi:
+
+- provider `mock` pozwala przetestowac przeplyw checkout bez zewnetrznej bramki,
+- webhook Stripe jest obslugiwany pod adresem `POST /webhooks/stripe`,
+- przy Stripe rekomendowane jest ustawienie poprawnego HTTPS i `STRIPE_WEBHOOK_SECRET`.
 
 ## Dane startowe
 
