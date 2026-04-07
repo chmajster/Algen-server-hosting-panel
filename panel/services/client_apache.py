@@ -45,6 +45,17 @@ def client_apache_prefix() -> str:
     return current_app.config.get("CLIENT_APACHE_CONTAINER_PREFIX", "hosting-panel-client-apache")
 
 
+def client_apache_container_name(client: Client) -> str:
+    return _container_name(client)
+
+
+def client_apache_http_port(client: Client) -> int:
+    from flask import current_app
+
+    http_port_base = int(current_app.config.get("CLIENT_APACHE_HTTP_PORT_BASE", 18000))
+    return http_port_base + int(client.id)
+
+
 def _domain_mount_root(client: Client) -> Path:
     return client_home_root(client) / "domains"
 
@@ -174,8 +185,7 @@ def _ensure_container(name: str, client: Client, vhost_file: Path) -> None:
 
     bind_address = current_app.config.get("CLIENT_APACHE_BIND_ADDRESS", "127.0.0.1")
     image = current_app.config.get("CLIENT_APACHE_IMAGE", "httpd:2.4")
-    http_port_base = int(current_app.config.get("CLIENT_APACHE_HTTP_PORT_BASE", 18000))
-    http_port = http_port_base + int(client.id)
+    http_port = client_apache_http_port(client)
 
     domain_mount = _domain_mount_root(client)
     domain_mount.mkdir(parents=True, exist_ok=True)

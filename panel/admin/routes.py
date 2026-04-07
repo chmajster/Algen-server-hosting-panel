@@ -25,7 +25,7 @@ from panel.models import (
 from panel.services.audit import log_activity
 from panel.services.billing import adjust_balance, ensure_client_balance
 from panel.services.monitoring import collect_server_metrics, service_statuses
-from panel.services.smoketest import run_app_smoke_test
+from panel.services.smoketest import run_app_smoke_test, write_smoke_test_log
 from panel.services.settings import (
     CSS_FRAMEWORK_SETTING_KEY,
     css_framework_choices,
@@ -274,18 +274,24 @@ def smoke_test():
     result = None
     if request.method == "POST":
         result = run_app_smoke_test()
+        log_error = write_smoke_test_log(result, source="admin_panel")
         level = "success" if result.success else "warning"
         flash(
             f"Smoketest zakonczony: {result.passed}/{result.total} kontroli zaliczone, czas {result.duration_ms} ms.",
             level,
         )
+        if log_error:
+            flash(f"Nie udalo sie zapisac logu smoketestu: {log_error}", "warning")
+        metadata = result.as_dict()
+        if log_error:
+            metadata["log_error"] = log_error
         log_activity(
             "admin.smoke_test",
             "application",
             "Uruchomiono smoketest aplikacji z panelu administratora.",
             entity_id="smoke-test",
             actor=current_user,
-            metadata=result.as_dict(),
+            metadata=metadata,
             success=result.success,
         )
         db.session.commit()

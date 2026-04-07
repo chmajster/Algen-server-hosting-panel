@@ -16,12 +16,15 @@ bcrypt = Bcrypt()
 
 
 def get_client_ip() -> str:
-    forwarded_for = request.headers.get("X-Forwarded-For", "")
-    if forwarded_for:
-        return forwarded_for.split(",")[0].strip()
+    remote_ip = (request.remote_addr or "").strip()
+    if remote_ip:
+        return remote_ip
     real_ip = request.headers.get("X-Real-IP", "")
     if real_ip:
         return real_ip.strip()
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    if forwarded_for:
+        return forwarded_for.split(",")[-1].strip()
     return get_remote_address()
 
 

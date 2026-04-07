@@ -21,6 +21,12 @@ def app():
             "STORAGE_ROOT": str(Path(temp_dir.name) / "uploads"),
             "CLIENT_HOME_ROOT": str(Path(temp_dir.name) / "clients"),
             "BACKUP_ROOT": str(Path(temp_dir.name) / "backups"),
+            "SMOKE_TEST_LOG_FILE": str(Path(temp_dir.name) / "smoke-test.log"),
+            "SMOKE_TEST_API_TOKEN": "test-smoke-token",
+            "SMOKE_TEST_API_ALLOWLIST": "127.0.0.1/32,::1/128",
+            "SMOKE_TEST_API_RATELIMIT": "200 per minute",
+            "ADMIN_LOCAL_ONLY": True,
+            "ADMIN_ALLOWED_NETWORKS": "127.0.0.1/32,::1/128",
         }
     )
     with app.app_context():

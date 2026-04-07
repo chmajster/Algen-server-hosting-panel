@@ -56,6 +56,20 @@ class Config:
     CLIENT_APACHE_HTTP_PORT_BASE = int(os.getenv("CLIENT_APACHE_HTTP_PORT_BASE", "18000"))
     CLIENT_APACHE_CONTAINER_PREFIX = os.getenv("CLIENT_APACHE_CONTAINER_PREFIX", "hosting-panel-client-apache")
     CLIENT_APACHE_REMOVE_EMPTY = os.getenv("CLIENT_APACHE_REMOVE_EMPTY", "true").lower() == "true"
+    SMOKE_TEST_LOG_FILE = os.getenv("SMOKE_TEST_LOG_FILE", "/var/log/hosting-panel/smoke-test.log")
+    SMOKE_TEST_API_TOKEN = os.getenv("SMOKE_TEST_API_TOKEN", "")
+    SMOKE_TEST_API_ALLOWLIST = os.getenv(
+        "SMOKE_TEST_API_ALLOWLIST",
+        "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+    )
+    SMOKE_TEST_API_RATELIMIT = os.getenv("SMOKE_TEST_API_RATELIMIT", "5 per minute")
+    SMOKE_TEST_SCHEDULE_ENABLED = os.getenv("SMOKE_TEST_SCHEDULE_ENABLED", "true").lower() == "true"
+    SMOKE_TEST_INTERVAL = os.getenv("SMOKE_TEST_INTERVAL", "*:0/15")
+    ADMIN_LOCAL_ONLY = os.getenv("ADMIN_LOCAL_ONLY", "true").lower() == "true"
+    ADMIN_ALLOWED_NETWORKS = os.getenv(
+        "ADMIN_ALLOWED_NETWORKS",
+        "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16",
+    )
     SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
     REMEMBER_COOKIE_SECURE = SESSION_COOKIE_SECURE
     WTF_CSRF_TIME_LIMIT = None

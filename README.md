@@ -131,12 +131,66 @@ flask --app wsgi:app smoke-test
 
 - z panelu administratora: menu `Smoketest` lub karta na dashboardzie admina.
 
+- przez endpoint JSON do monitoringu zewnetrznego:
+
+```bash
+curl -H "X-Smoke-Test-Token: <SMOKE_TEST_API_TOKEN>" http://127.0.0.1/monitoring/smoke-test.json
+```
+
+Uwagi bezpieczenstwa:
+
+- endpoint akceptuje token **wylacznie** z naglowka `X-Smoke-Test-Token` (bez query param),
+- endpoint jest ograniczony allowlista IP (`SMOKE_TEST_API_ALLOWLIST`),
+- endpoint ma osobny rate limit (`SMOKE_TEST_API_RATELIMIT`).
+
 Smoketest sprawdza:
 
 - polaczenie z baza danych,
 - obecność kluczowych endpointow aplikacji,
 - dostepnosc katalogow `STORAGE_ROOT`, `CLIENT_HOME_ROOT`, `BACKUP_ROOT`,
-- runtime Docker, jesli wlaczone jest `CLIENT_APACHE_ENABLED=true`.
+- runtime Docker, jesli wlaczone jest `CLIENT_APACHE_ENABLED=true`,
+- zgodnosc kontenerow Apache per klient (obecnosc, status, mapowanie portow, `httpd -t`).
+
+Kazde uruchomienie smoketestu zapisuje log JSON do:
+
+`/var/log/hosting-panel/smoke-test.log`
+
+Harmonogram automatyczny (systemd timer):
+
+- usluga: `hosting-panel-smoke-test.service`,
+- timer: `hosting-panel-smoke-test.timer`,
+- domyslny interwal: `*:0/15`.
+
+Przydatne polecenia:
+
+```bash
+sudo systemctl status hosting-panel-smoke-test.timer
+sudo systemctl start hosting-panel-smoke-test.service
+sudo journalctl -u hosting-panel-smoke-test.service -n 100 --no-pager
+tail -n 50 /var/log/hosting-panel/smoke-test.log
+```
+
+Konfiguracja `.env`:
+
+```env
+SMOKE_TEST_LOG_FILE=/var/log/hosting-panel/smoke-test.log
+SMOKE_TEST_API_TOKEN=change-this-smoke-token
+SMOKE_TEST_API_ALLOWLIST=127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+SMOKE_TEST_API_RATELIMIT='5 per minute'
+SMOKE_TEST_SCHEDULE_ENABLED=true
+SMOKE_TEST_INTERVAL='*:0/15'
+```
+
+## Ograniczenie panelu admin
+
+Panel administratora (`/admin/...`) moze byc ograniczony do sieci lokalnej/VPN.
+
+Domyslnie funkcja jest wlaczona i korzysta z allowlisty prywatnych podsieci.
+
+```env
+ADMIN_LOCAL_ONLY=true
+ADMIN_ALLOWED_NETWORKS=127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16
+```
 
 Jeśli chcesz odtworzyć sam serwis bez pełnej reinstalacji:
 

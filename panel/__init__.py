@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import os
 
-from flask import Flask, redirect, url_for
+from flask import Flask, abort, redirect, request, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from panel.config import config_map
-from panel.extensions import bcrypt, csrf, db, limiter, login_manager, migrate
+from panel.extensions import bcrypt, csrf, db, get_client_ip, limiter, login_manager, migrate
+from panel.utils.security import is_ip_allowed
 
 
 def create_app(config_name: str | None = None) -> Flask:
@@ -34,6 +35,7 @@ def create_app(config_name: str | None = None) -> Flask:
     login_manager.login_message_category = "warning"
 
     register_blueprints(app)
+    register_security_hooks(app)
     register_cli(app)
     register_context(app)
     register_error_handlers(app)
@@ -43,6 +45,18 @@ def create_app(config_name: str | None = None) -> Flask:
         return redirect(url_for("auth.login"))
 
     return app
+
+
+def register_security_hooks(app: Flask) -> None:
+    @app.before_request
+    def enforce_admin_local_only():
+        if not app.config.get("ADMIN_LOCAL_ONLY", True):
+            return None
+        if not (request.path or "").startswith("/admin"):
+            return None
+        if not is_ip_allowed(get_client_ip(), app.config.get("ADMIN_ALLOWED_NETWORKS"), default_allow=False):
+            abort(403)
+        return None
 
 
 def register_blueprints(app: Flask) -> None:
@@ -86,7 +100,7 @@ def register_cli(app: Flask) -> None:
     from panel.extensions import db
     from panel.seed import seed_defaults
     from panel.services.billing import run_billing_cycle
-    from panel.services.smoketest import run_app_smoke_test
+    from panel.services.smoketest import run_app_smoke_test, write_smoke_test_log
 
     @app.cli.command("seed-data")
     @click.option("--admin-username", default="admin")
@@ -141,8 +155,10 @@ def register_cli(app: Flask) -> None:
         click.echo(f"Przetworzono cykli: {processed}")
 
     @app.cli.command("smoke-test")
-    def smoke_test():
+    @click.option("--source", default="cli", show_default=True)
+    def smoke_test(source: str):
         result = run_app_smoke_test()
+        log_error = write_smoke_test_log(result, source=source)
         summary = (
             f"Smoketest: {'OK' if result.success else 'BLAD'} "
             f"({result.passed}/{result.total}) w {result.duration_ms} ms"
@@ -151,6 +167,8 @@ def register_cli(app: Flask) -> None:
         for check in result.checks:
             status = "PASS" if check.success else "FAIL"
             click.echo(f"[{status}] {check.name}: {check.message}")
+        if log_error:
+            click.echo(f"[WARN] Nie udalo sie zapisac logu smoketestu: {log_error}")
         if not result.success:
             raise click.ClickException("Smoketest zakonczyl sie bledem.")
 

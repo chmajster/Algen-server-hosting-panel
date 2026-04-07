@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 import re
 from pathlib import Path
@@ -10,10 +11,36 @@ from panel.models import Client, Domain
 
 
 SAFE_SEGMENT_RE = re.compile(r"[^A-Za-z0-9._-]+")
+HOSTNAME_RE = re.compile(
+    r"^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)(?:\.(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?))*$"
+)
+HOST_LABEL_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+PHP_VERSION_RE = re.compile(r"^[0-9]{1,2}(?:\.[0-9]{1,2}){0,2}$")
 
 
 class DomainProvisioningError(RuntimeError):
     pass
+
+
+def _normalize_hostname(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if HOSTNAME_RE.fullmatch(normalized) is None:
+        raise DomainProvisioningError("Nieprawidlowa nazwa domeny.")
+    return normalized
+
+
+def _normalize_subdomain(value: str) -> str:
+    normalized = (value or "").strip().lower()
+    if HOST_LABEL_RE.fullmatch(normalized) is None:
+        raise DomainProvisioningError("Nieprawidlowa nazwa subdomeny.")
+    return normalized
+
+
+def _normalize_php_version(value: str) -> str:
+    normalized = (value or "").strip()
+    if PHP_VERSION_RE.fullmatch(normalized) is None:
+        raise DomainProvisioningError("Nieprawidlowa wersja PHP.")
+    return normalized
 
 
 def _safe_segment(value: str, fallback: str) -> str:
@@ -63,17 +90,18 @@ def _default_htaccess() -> str:
 
 
 def _default_index_html(hostname: str) -> str:
+    safe_hostname = html.escape(hostname, quote=True)
     return "\n".join(
         [
             "<!doctype html>",
             '<html lang="pl">',
             "<head>",
             '  <meta charset="utf-8">',
-            f"  <title>{hostname}</title>",
+            f"  <title>{safe_hostname}</title>",
             '  <meta name="viewport" content="width=device-width, initial-scale=1">',
             "</head>",
             "<body>",
-            f"  <h1>{hostname}</h1>",
+            f"  <h1>{safe_hostname}</h1>",
             "  <p>Witryna zostala przygotowana przez Hosting Panel.</p>",
             "</body>",
             "</html>",
@@ -94,6 +122,9 @@ def _write_json(path: Path, payload: dict) -> None:
 def provision_domain_tree(client: Client, domain_name: str, php_version: str) -> dict[str, str]:
     if client.user is None:
         raise DomainProvisioningError("Klient nie ma przypisanego uzytkownika.")
+
+    domain_name = _normalize_hostname(domain_name)
+    php_version = _normalize_php_version(php_version)
 
     domain_root = managed_domain_root(client, domain_name)
     public_root = domain_root / "public"
@@ -154,6 +185,9 @@ def provision_domain_tree(client: Client, domain_name: str, php_version: str) ->
 def provision_subdomain_tree(domain: Domain, subdomain_name: str, php_version: str) -> dict[str, str]:
     if domain.client is None:
         raise DomainProvisioningError("Domena nie ma przypisanego klienta.")
+
+    subdomain_name = _normalize_subdomain(subdomain_name)
+    php_version = _normalize_php_version(php_version)
 
     provision_domain_tree(domain.client, domain.name, domain.php_version)
 

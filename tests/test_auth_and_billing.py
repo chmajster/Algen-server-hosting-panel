@@ -40,6 +40,18 @@ def test_login_remember_me_sets_remember_cookie(client):
     assert "remember_token=" in cookies
 
 
+def test_login_rejects_external_next_redirect(client):
+    response = client.post(
+        "/auth/login?next=https://evil.example/phish",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    location = response.headers.get("Location", "")
+    assert location.startswith("/admin/")
+    assert "evil.example" not in location
+
+
 def test_admin_dashboard_loads(client):
     client.post(
         "/auth/login",
@@ -75,6 +87,46 @@ def test_admin_can_run_smoke_test_from_panel(client):
     assert response.status_code == 200
     assert "Smoketest zakonczony:" in body
     assert "PASS" in body
+
+
+def test_smoke_test_json_requires_valid_token(client):
+    response = client.get("/monitoring/smoke-test.json")
+    assert response.status_code == 403
+
+
+def test_smoke_test_json_returns_payload_for_valid_token(client):
+    response = client.get("/monitoring/smoke-test.json", headers={"X-Smoke-Test-Token": "test-smoke-token"})
+    payload = response.get_json()
+    assert response.status_code == 200
+    assert payload is not None
+    assert payload["source"] == "http"
+    assert payload["total"] >= 1
+    assert isinstance(payload["checks"], list)
+
+
+def test_smoke_test_json_rejects_query_param_token(client):
+    response = client.get("/monitoring/smoke-test.json?token=test-smoke-token")
+    assert response.status_code == 403
+
+
+def test_smoke_test_json_rejects_ip_outside_allowlist(client, app):
+    app.config["SMOKE_TEST_API_ALLOWLIST"] = "10.99.0.0/16"
+    response = client.get(
+        "/monitoring/smoke-test.json",
+        headers={"X-Smoke-Test-Token": "test-smoke-token"},
+        environ_overrides={"REMOTE_ADDR": "127.0.0.1"},
+    )
+    assert response.status_code == 403
+
+
+def test_admin_panel_is_blocked_outside_local_network(client):
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.get("/admin/", environ_overrides={"REMOTE_ADDR": "8.8.8.8"})
+    assert response.status_code == 403
 
 
 def test_admin_mail_page_loads(client):
@@ -206,6 +258,34 @@ def test_admin_domain_create_provisions_expected_directory_tree(client, app):
         domain = Domain.query.filter_by(name="example.test").first()
         assert domain is not None
         assert domain.document_root == str(domain_root / "public")
+
+
+def test_admin_domain_create_rejects_invalid_domain_name(client, app):
+    with app.app_context():
+        client_profile = Client.query.first()
+        client_id = client_profile.id
+
+    client.post(
+        "/auth/login",
+        data={"username": "admin", "password": "Admin123!"},
+        follow_redirects=True,
+    )
+    response = client.post(
+        "/admin/domains/new",
+        data={
+            "client_id": client_id,
+            "client_service_id": 0,
+            "name": "bad\nname.example",
+            "document_root": "",
+            "php_version": "8.3",
+            "status": "active",
+        },
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    with app.app_context():
+        domain = Domain.query.filter_by(name="bad\nname.example").first()
+        assert domain is None
 
 
 def test_admin_subdomain_create_provisions_directory_tree(client, app):

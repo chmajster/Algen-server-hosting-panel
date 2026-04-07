@@ -1,18 +1,31 @@
 from __future__ import annotations
 
 from datetime import datetime
+from urllib.parse import urlsplit
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required, login_user, logout_user
 from sqlalchemy import or_
 
-from panel.extensions import db, limiter
+from panel.extensions import db, get_client_ip, limiter
 from panel.forms.auth import LoginForm
 from panel.models import User
 from panel.services.audit import log_activity
 
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
+
+
+def _safe_next_url(value: str | None) -> str | None:
+    target = (value or "").strip()
+    if not target:
+        return None
+    parsed = urlsplit(target)
+    if parsed.scheme or parsed.netloc:
+        return None
+    if not target.startswith("/") or target.startswith("//"):
+        return None
+    return target
 
 
 @auth_bp.route("/login", methods=["GET", "POST"])
@@ -27,8 +40,9 @@ def login():
 
     form = LoginForm()
     if form.validate_on_submit():
+        identity = (form.username.data or "").strip()
         user = User.query.filter(
-            or_(User.username == form.username.data, User.email == form.username.data)
+            or_(User.username == identity, User.email == identity)
         ).first()
         if (
             user
@@ -38,12 +52,13 @@ def login():
         ):
             login_user(user, remember=form.remember_me.data)
             user.last_login_at = datetime.utcnow()
-            user.last_login_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+            user.last_login_ip = get_client_ip()
             log_activity("auth.login", "user", "Udane logowanie", entity_id=user.id, actor=user)
             db.session.commit()
             flash("Zalogowano pomyślnie.", "success")
+            next_url = _safe_next_url(request.args.get("next"))
             return redirect(
-                request.args.get("next")
+                next_url
                 or url_for("admin.dashboard" if user.has_role("administrator") else "client.dashboard")
             )
         flash("Nieprawidłowe dane logowania.", "danger")

@@ -20,6 +20,14 @@ AUTOUPDATE_ENABLED="${AUTOUPDATE_ENABLED:-true}"
 AUTOUPDATE_REPO_URL="${AUTOUPDATE_REPO_URL:-https://github.com/chmajster/Algen-server-hosting-panel}"
 AUTOUPDATE_BRANCH="${AUTOUPDATE_BRANCH:-main}"
 AUTOUPDATE_INTERVAL="${AUTOUPDATE_INTERVAL:-*:0/15}"
+SMOKE_TEST_SCHEDULE_ENABLED="${SMOKE_TEST_SCHEDULE_ENABLED:-true}"
+SMOKE_TEST_INTERVAL="${SMOKE_TEST_INTERVAL:-*:0/15}"
+SMOKE_TEST_LOG_FILE="${SMOKE_TEST_LOG_FILE:-/var/log/hosting-panel/smoke-test.log}"
+SMOKE_TEST_API_TOKEN="${SMOKE_TEST_API_TOKEN:-$(openssl rand -hex 24)}"
+SMOKE_TEST_API_ALLOWLIST="${SMOKE_TEST_API_ALLOWLIST:-127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}"
+SMOKE_TEST_API_RATELIMIT="${SMOKE_TEST_API_RATELIMIT:-5 per minute}"
+ADMIN_LOCAL_ONLY="${ADMIN_LOCAL_ONLY:-true}"
+ADMIN_ALLOWED_NETWORKS="${ADMIN_ALLOWED_NETWORKS:-127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16}"
 ADMIN_ACCOUNT_PREEXISTED="false"
 ADMIN_PASSWORD_EXPLICIT="false"
 ADMIN_PASSWORD_UPDATED="false"
@@ -60,7 +68,7 @@ else
 fi
 
 CURRENT_STEP=0
-TOTAL_STEPS=14
+TOTAL_STEPS=16
 
 print_banner() {
   printf '%s\n' "${C_CYAN}${C_BOLD}============================================================${C_RESET}"
@@ -355,6 +363,14 @@ generate_env() {
   set_env_key "CLIENT_APACHE_HTTP_PORT_BASE" "18000"
   set_env_key "CLIENT_APACHE_CONTAINER_PREFIX" "hosting-panel-client-apache"
   set_env_key "CLIENT_APACHE_REMOVE_EMPTY" "true"
+  set_env_key "SMOKE_TEST_LOG_FILE" "$SMOKE_TEST_LOG_FILE"
+  set_env_key "SMOKE_TEST_API_TOKEN" "$SMOKE_TEST_API_TOKEN"
+  set_env_key "SMOKE_TEST_API_ALLOWLIST" "$SMOKE_TEST_API_ALLOWLIST"
+  set_env_key "SMOKE_TEST_API_RATELIMIT" "$SMOKE_TEST_API_RATELIMIT"
+  set_env_key "SMOKE_TEST_SCHEDULE_ENABLED" "$SMOKE_TEST_SCHEDULE_ENABLED"
+  set_env_key "SMOKE_TEST_INTERVAL" "$SMOKE_TEST_INTERVAL"
+  set_env_key "ADMIN_LOCAL_ONLY" "$ADMIN_LOCAL_ONLY"
+  set_env_key "ADMIN_ALLOWED_NETWORKS" "$ADMIN_ALLOWED_NETWORKS"
   set_env_key "SESSION_COOKIE_SECURE" "false"
   set_env_key "AUTOUPDATE_ENABLED" "$AUTOUPDATE_ENABLED"
   set_env_key "AUTOUPDATE_REPO_URL" "$AUTOUPDATE_REPO_URL"
@@ -438,6 +454,26 @@ configure_autoupdate() {
   ok "Timer auto-update aktywny"
 }
 
+configure_smoketest_schedule() {
+  step "Konfiguracja harmonogramu smoketestu"
+  if [[ "$SMOKE_TEST_SCHEDULE_ENABLED" != "true" ]]; then
+    warn "Harmonogram smoketestu wylaczony"
+    systemctl disable --now hosting-panel-smoke-test.timer >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/hosting-panel-smoke-test.service /etc/systemd/system/hosting-panel-smoke-test.timer
+    systemctl daemon-reload
+    return 0
+  fi
+
+  log "Konfiguruje timer smoketestu"
+  install -o root -g root -m 750 "$APP_DIR/scripts/install_smoketest_service.sh" /usr/local/bin/hosting-panel-install-smoketest
+  APP_DIR="$APP_DIR" \
+  APP_USER="$APP_USER" \
+  APP_GROUP="$APP_GROUP" \
+  TIMER_ONCALENDAR="$SMOKE_TEST_INTERVAL" \
+  /usr/local/bin/hosting-panel-install-smoketest
+  ok "Timer smoketestu aktywny"
+}
+
 configure_nginx() {
   step "Konfiguracja nginx na porcie 80"
   [[ "$INSTALL_NGINX" == "true" ]] || return 0
@@ -502,6 +538,9 @@ verify_services() {
   if [[ "$AUTOUPDATE_ENABLED" == "true" ]]; then
     report_unit_status "Auto-update timer" "hosting-panel-update.timer"
   fi
+  if [[ "$SMOKE_TEST_SCHEDULE_ENABLED" == "true" ]]; then
+    report_unit_status "Smoke-test timer" "hosting-panel-smoke-test.timer"
+  fi
   report_http_status "Panel przez Gunicorn" "http://127.0.0.1:8000/"
   if [[ "$INSTALL_NGINX" == "true" ]]; then
     report_http_status "Panel przez nginx" "http://127.0.0.1/"
@@ -541,6 +580,8 @@ ${C_BLUE}${C_BOLD}Backupy hosts:${C_RESET} /var/backups/hosting-panel/hosts
 ${C_YELLOW}${C_BOLD}Auto-update repo:${C_RESET} ${AUTOUPDATE_REPO_URL}
 ${C_YELLOW}${C_BOLD}Auto-update branch:${C_RESET} ${AUTOUPDATE_BRANCH}
 ${C_YELLOW}${C_BOLD}Auto-update:${C_RESET} $( [[ "$AUTOUPDATE_ENABLED" == "true" ]] && printf 'hosting-panel-update.timer (%s)' "$AUTOUPDATE_INTERVAL" || printf 'wylaczony' )
+${C_YELLOW}${C_BOLD}Smoke-test timer:${C_RESET} $( [[ "$SMOKE_TEST_SCHEDULE_ENABLED" == "true" ]] && printf 'hosting-panel-smoke-test.timer (%s)' "$SMOKE_TEST_INTERVAL" || printf 'wylaczony' )
+${C_YELLOW}${C_BOLD}Smoke-test log:${C_RESET} ${SMOKE_TEST_LOG_FILE}
 ${C_DIM}Zrodlo pakietu: ${PACKAGE_NAME:-repo} ${VERSION:-local}${C_RESET}
 EOF
 }
@@ -562,6 +603,7 @@ main() {
   run_migrations_and_seed
   configure_systemd
   configure_autoupdate
+  configure_smoketest_schedule
   configure_nginx
   verify_services
   print_summary

@@ -5,6 +5,7 @@ import shutil
 from pathlib import Path
 
 from flask import current_app
+from werkzeug.utils import secure_filename
 
 from panel.models import Client
 
@@ -57,7 +58,12 @@ def list_directory(root: Path, relative_path: str = "") -> list[dict]:
 def save_upload(root: Path, relative_dir: str, storage_file) -> Path:
     directory = safe_join(root, relative_dir)
     directory.mkdir(parents=True, exist_ok=True)
-    target = safe_join(root, str(Path(relative_dir) / storage_file.filename))
+
+    filename = secure_filename(storage_file.filename or "")
+    if not filename:
+        raise FileManagerError("Niedozwolona nazwa pliku.")
+
+    target = safe_join(root, str(Path(relative_dir) / filename))
     storage_file.save(target)
     return target
 
