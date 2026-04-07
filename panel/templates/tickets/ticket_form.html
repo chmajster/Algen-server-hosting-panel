@@ -2,7 +2,7 @@
 {% block content %}
 <div class="surface-card p-4">
   <h1 class="h3 mb-4">{{ title }}</h1>
-  <form method="post" class="row g-3">
+  <form method="post" enctype="multipart/form-data" class="row g-3">
     {{ form.hidden_tag() }}
     <div class="col-12">
       {{ form.subject.label(class="form-label") }}
@@ -19,6 +19,11 @@
     <div class="col-12">
       {{ form.message.label(class="form-label") }}
       {{ form.message(class="form-control", rows="8", placeholder="Opisz problem lub pytanie") }}
+    </div>
+    <div class="col-12">
+      <label class="form-label" for="attachment">Zalacznik (opcjonalnie)</label>
+      <input class="form-control" id="attachment" name="attachment" type="file" accept=".txt,.pdf,.png,.jpg,.jpeg,.gif,.zip,.tar,.gz,.log,.csv,.json">
+      <div class="form-text">Maksymalny rozmiar i typy plikow sa kontrolowane konfiguracja panelu.</div>
     </div>
     <div class="col-12">
       <button class="btn btn-primary">{{ form.submit.label.text }}</button>
