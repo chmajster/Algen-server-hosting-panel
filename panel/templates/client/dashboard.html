@@ -18,7 +18,10 @@
         {% for service in client.services %}
           <li class="list-group-item px-0 d-flex justify-content-between">
             <span>{{ service.name }}</span>
-            {{ render_status(service.status) }}
+            <span class="d-flex gap-2">
+              {{ render_status(service.status) }}
+              {{ render_status(enforcement_states.get(service.id, {}).get('code', 'active')) }}
+            </span>
           </li>
         {% else %}
           <li class="list-group-item px-0">Brak usług.</li>

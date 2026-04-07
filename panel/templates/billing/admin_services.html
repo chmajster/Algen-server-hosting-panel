@@ -66,12 +66,15 @@
             <th>Typ</th>
             <th>Cykl</th>
             <th>Status</th>
+            <th>Stan egzekucji finansowej</th>
             <th>Kwota</th>
             <th>Start</th>
+            <th>Akcje</th>
           </tr>
         </thead>
         <tbody>
           {% for service in services %}
+            {% set enforcement = enforcement_states.get(service.id, {}) %}
             <tr>
               <td>
                 <div class="fw-semibold">{{ service.client.user.full_name or service.client.user.username }}</div>
@@ -86,8 +89,44 @@
               <td><span class="table-pill">{{ service.service_type }}</span></td>
               <td>{{ service.billing_period }}</td>
               <td>{{ render_status(service.status) }}</td>
+              <td>
+                {{ render_status(enforcement.get('code', 'active')) }}
+                <div class="small text-secondary mt-1">
+                  {{ enforcement.get('label', 'active') }}
+                  <br>
+                  {% if enforcement.get('overdue_since') %}
+                    od: {{ enforcement.get('overdue_since').strftime("%Y-%m-%d") }}
+                  {% endif %}
+                  {% if enforcement.get('grace_until') %}
+                    | grace do: {{ enforcement.get('grace_until').strftime("%Y-%m-%d") }}
+                  {% endif %}
+                  {% if enforcement.get('manual_override') %}
+                    | override: on
+                  {% endif %}
+                </div>
+              </td>
               <td class="fw-semibold">{{ service.recurring_amount }}</td>
               <td>{{ service.starts_on.strftime("%Y-%m-%d") if service.starts_on else "-" }}</td>
+              <td>
+                <form method="post" action="{{ url_for('billing.admin_service_financial_override', service_id=service.id) }}" class="mb-2">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="enabled" value="{{ 0 if service.financial_enforcement_override else 1 }}">
+                  <button class="btn btn-sm {{ 'btn-outline-secondary' if service.financial_enforcement_override else 'btn-outline-warning' }}" type="submit">
+                    {{ 'Wylacz override' if service.financial_enforcement_override else 'Wlacz override' }}
+                  </button>
+                </form>
+                {% if service.status == 'blocked_manual' %}
+                  <form method="post" action="{{ url_for('billing.admin_service_manual_unsuspend', service_id=service.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-outline-success" type="submit">Reczne odwieszenie</button>
+                  </form>
+                {% else %}
+                  <form method="post" action="{{ url_for('billing.admin_service_manual_suspend', service_id=service.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button class="btn btn-sm btn-outline-danger" type="submit">Reczne zawieszenie</button>
+                  </form>
+                {% endif %}
+              </td>
             </tr>
           {% endfor %}
         </tbody>

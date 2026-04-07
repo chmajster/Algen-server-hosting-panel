@@ -106,7 +106,7 @@ def register_cli(app: Flask) -> None:
     from panel.extensions import db
     from panel.models import BackupRestoreJob
     from panel.seed import seed_defaults
-    from panel.services.billing import run_billing_cycle
+    from panel.services.billing import run_billing_cycle, run_financial_enforcement
     from panel.services.backup_restore import process_restore_job
     from panel.services.client_resources import record_client_resource_samples
     from panel.services.smoketest import run_app_smoke_test, write_smoke_test_log
@@ -197,6 +197,17 @@ def register_cli(app: Flask) -> None:
         processed = run_billing_cycle()
         db.session.commit()
         click.echo(f"Przetworzono cykli: {processed}")
+
+    @app.cli.command("run-financial-enforcement")
+    def run_financial_enforcement_command():
+        summary = run_financial_enforcement()
+        db.session.commit()
+        click.echo(
+            "Egzekucja finansowa: "
+            f"klienci={summary['clients']}, "
+            f"zmienieni_klienci={summary['changed_clients']}, "
+            f"przejscia_uslug={summary['service_transitions']}"
+        )
 
     @app.cli.command("run-ticket-escalations")
     def run_ticket_escalations():

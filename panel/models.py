@@ -218,6 +218,7 @@ class ServicePlan(TimestampMixin, db.Model):
     monthly_price = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal("0.00"))
     daily_price = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal("0.00"))
     yearly_price = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal("0.00"))
+    grace_days_override = db.Column(db.Integer, nullable=True)
     limits_json = db.Column(db.JSON, nullable=False, default=dict)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
 
@@ -239,6 +240,7 @@ class ClientService(TimestampMixin, db.Model):
     recurring_amount = db.Column(db.Numeric(12, 2), nullable=False, default=Decimal("0.00"))
     auto_suspend = db.Column(db.Boolean, nullable=False, default=True)
     auto_resume = db.Column(db.Boolean, nullable=False, default=True)
+    financial_enforcement_override = db.Column(db.Boolean, nullable=False, default=False)
     manual_lock_reason = db.Column(db.String(255), nullable=True)
     metadata_json = db.Column(db.JSON, nullable=True)
 

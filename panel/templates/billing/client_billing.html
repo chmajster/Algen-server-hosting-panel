@@ -1,4 +1,5 @@
 {% extends "layouts/base.html" %}
+{% from "partials/status_badge.html" import render_status %}
 {% block content %}
 <div class="row g-3 mb-3">
   <div class="col-12 col-md-4">
@@ -9,8 +10,8 @@
   </div>
   <div class="col-12 col-md-4">
     <div class="surface-card p-3">
-      <div class="text-secondary">Status</div>
-      <div class="h3">{{ client.billing_status }}</div>
+      <div class="text-secondary">Stan egzekucji finansowej</div>
+      <div class="h3">{{ render_status(client.billing_status) }}</div>
     </div>
   </div>
   <div class="col-12 col-md-4">
@@ -82,12 +83,14 @@
           <th>Usluga</th>
           <th>Aktualny plan</th>
           <th>Kwota cykliczna</th>
+          <th>Stan egzekucji finansowej</th>
           <th>Zmien plan</th>
         </tr>
       </thead>
       <tbody>
         {% for service in hosting_services %}
         {% set plan_form = plan_change_forms.get(service.id) %}
+        {% set enforcement = enforcement_states.get(service.id, {}) %}
         <tr>
           <td>
             <div class="fw-semibold">{{ service.name }}</div>
@@ -95,6 +98,22 @@
           </td>
           <td>{{ service.plan.name if service.plan else '-' }}</td>
           <td>{{ service.recurring_amount }}</td>
+          <td>
+            {{ render_status(enforcement.get('code', 'active')) }}
+            <div class="small text-secondary mt-1">
+              {{ enforcement.get('label', 'active') }}
+              <br>
+              {% if enforcement.get('overdue_since') %}
+                od: {{ enforcement.get('overdue_since').strftime('%Y-%m-%d') }}
+              {% endif %}
+              {% if enforcement.get('grace_until') %}
+                | grace do: {{ enforcement.get('grace_until').strftime('%Y-%m-%d') }}
+              {% endif %}
+              {% if enforcement.get('manual_override') %}
+                | override: wlaczone
+              {% endif %}
+            </div>
+          </td>
           <td>
             {% if plan_form and plan_form.target_plan_id.choices %}
             <form method="post" action="{{ url_for('billing.client_change_plan', service_id=service.id) }}" class="row g-2 align-items-center">

@@ -9,6 +9,7 @@ from panel.models import ApiToken
 from panel.models import BillingTransaction
 from panel.services.api_tokens import issue_api_token, revoke_api_token
 from panel.services.audit import log_activity
+from panel.services.billing import financial_enforcement_snapshot
 from panel.utils.decorators import active_account_required, roles_required
 from panel.utils.query import current_client
 
@@ -23,7 +24,13 @@ client_bp = Blueprint("client", __name__, url_prefix="/client")
 def dashboard():
     client = current_client()
     recent_transactions = BillingTransaction.query.filter_by(client_id=client.id).order_by(BillingTransaction.created_at.desc()).limit(10).all()
-    return render_template("client/dashboard.html", client=client, recent_transactions=recent_transactions)
+    enforcement_states = financial_enforcement_snapshot([service for service in client.services if service.status != "deleted"])
+    return render_template(
+        "client/dashboard.html",
+        client=client,
+        recent_transactions=recent_transactions,
+        enforcement_states=enforcement_states,
+    )
 
 
 @client_bp.route("/api-tokens", methods=["GET", "POST"])

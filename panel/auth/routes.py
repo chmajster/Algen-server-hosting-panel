@@ -262,7 +262,13 @@ def register():
         db.session.add(user)
         db.session.add(client)
         db.session.add(service)
-        db.session.add(PaymentSetting(client=client, grace_days=3, auto_resume=True))
+        db.session.add(
+            PaymentSetting(
+                client=client,
+                grace_days=int(current_app.config.get("BILLING_GRACE_DAYS", 3)),
+                auto_resume=bool(current_app.config.get("BILLING_AUTO_RESUME", True)),
+            )
+        )
         db.session.flush()
         schedule_initial_cycle(service)
 

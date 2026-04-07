@@ -1,4 +1,24 @@
 {% extends "layouts/base.html" %}
 {% block content %}
-<div class="surface-card p-4"><h1 class="h3 mb-4">{{ title }}</h1><form method="post" class="row g-3">{{ form.hidden_tag() }}<div class="col-md-6">{{ form.client_id.label(class="form-label") }}{{ form.client_id(class="form-select") }}</div><div class="col-md-6">{{ form.service_plan_id.label(class="form-label") }}{{ form.service_plan_id(class="form-select") }}</div><div class="col-md-6">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control") }}</div><div class="col-md-6">{{ form.service_type.label(class="form-label") }}{{ form.service_type(class="form-select") }}</div><div class="col-md-4">{{ form.billing_period.label(class="form-label") }}{{ form.billing_period(class="form-select") }}</div><div class="col-md-4">{{ form.recurring_amount.label(class="form-label") }}{{ form.recurring_amount(class="form-control") }}</div><div class="col-md-4">{{ form.status.label(class="form-label") }}{{ form.status(class="form-select") }}</div><div class="col-md-4">{{ form.starts_on.label(class="form-label") }}{{ form.starts_on(class="form-control") }}</div><div class="col-md-4 form-check ms-3">{{ form.auto_suspend(class="form-check-input") }} {{ form.auto_suspend.label(class="form-check-label") }}</div><div class="col-md-4 form-check ms-3">{{ form.auto_resume(class="form-check-input") }} {{ form.auto_resume.label(class="form-check-label") }}</div><div class="col-12"><button class="btn btn-primary">{{ form.submit.label.text }}</button></div></form></div>
+<div class="surface-card p-4">
+	<h1 class="h3 mb-4">{{ title }}</h1>
+	<form method="post" class="row g-3">
+		{{ form.hidden_tag() }}
+		<div class="col-md-6">{{ form.client_id.label(class="form-label") }}{{ form.client_id(class="form-select") }}</div>
+		<div class="col-md-6">{{ form.service_plan_id.label(class="form-label") }}{{ form.service_plan_id(class="form-select") }}</div>
+		<div class="col-md-6">{{ form.name.label(class="form-label") }}{{ form.name(class="form-control") }}</div>
+		<div class="col-md-6">{{ form.service_type.label(class="form-label") }}{{ form.service_type(class="form-select") }}</div>
+		<div class="col-md-4">{{ form.billing_period.label(class="form-label") }}{{ form.billing_period(class="form-select") }}</div>
+		<div class="col-md-4">{{ form.recurring_amount.label(class="form-label") }}{{ form.recurring_amount(class="form-control") }}</div>
+		<div class="col-md-4">{{ form.status.label(class="form-label") }}{{ form.status(class="form-select") }}</div>
+		<div class="col-md-4">{{ form.starts_on.label(class="form-label") }}{{ form.starts_on(class="form-control") }}</div>
+		<div class="col-md-4 form-check ms-3">{{ form.auto_suspend(class="form-check-input") }} {{ form.auto_suspend.label(class="form-check-label") }}</div>
+		<div class="col-md-4 form-check ms-3">{{ form.auto_resume(class="form-check-input") }} {{ form.auto_resume.label(class="form-check-label") }}</div>
+		<div class="col-12 form-check ms-3">
+			{{ form.financial_enforcement_override(class="form-check-input") }} {{ form.financial_enforcement_override.label(class="form-check-label") }}
+			<div class="form-text">Gdy wlaczone, cron billingowy nie zmieni automatycznie statusu tej uslugi.</div>
+		</div>
+		<div class="col-12"><button class="btn btn-primary">{{ form.submit.label.text }}</button></div>
+	</form>
+</div>
 {% endblock %}

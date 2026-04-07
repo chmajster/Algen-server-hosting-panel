@@ -261,6 +261,11 @@ def _docker_container_exists(name: str) -> bool:
     return result.returncode == 0
 
 
+def _docker_container_running(name: str) -> bool:
+    result = _run_docker(["inspect", "-f", "{{.State.Running}}", name], check=False)
+    return result.returncode == 0 and (result.stdout or "").strip().lower() == "true"
+
+
 def _remove_container_if_exists(name: str) -> None:
     if _docker_container_exists(name):
         _run_docker(["rm", "-f", name])
@@ -364,3 +369,56 @@ def sync_client_apache_instance(client: Client, *, reason: str, actor=None) -> d
         metadata=payload,
     )
     return payload
+
+
+def suspend_client_apache_instance(client: Client, *, reason: str, actor=None) -> dict:
+    from flask import current_app
+
+    if not current_app.config.get("CLIENT_APACHE_ENABLED", False):
+        return {"enabled": False, "reason": "disabled"}
+
+    container_name = _container_name(client)
+    if not _docker_container_exists(container_name):
+        payload = {
+            "enabled": True,
+            "container": container_name,
+            "status": "missing",
+            "reason": reason,
+        }
+        log_activity(
+            "domains.apache_suspend",
+            "client_apache",
+            f"Pomieto zawieszenie kontenera Apache klienta {client.user.username if client.user else client.id} (kontener nie istnieje)",
+            entity_id=client.id,
+            client=client,
+            actor=actor,
+            metadata=payload,
+        )
+        return payload
+
+    stop_result = _run_docker(["stop", container_name], check=False)
+    stderr = (stop_result.stderr or "").strip().lower()
+    if stop_result.returncode != 0 and "not running" not in stderr:
+        message = (stop_result.stderr or stop_result.stdout or "Nieznany blad zatrzymania kontenera").strip()
+        raise ClientApacheServiceError(f"Nie udalo sie zatrzymac kontenera {container_name}: {message}")
+
+    payload = {
+        "enabled": True,
+        "container": container_name,
+        "status": "stopped" if not _docker_container_running(container_name) else "running",
+        "reason": reason,
+    }
+    log_activity(
+        "domains.apache_suspend",
+        "client_apache",
+        f"Zatrzymano kontener Apache klienta {client.user.username if client.user else client.id} (trigger: {reason})",
+        entity_id=client.id,
+        client=client,
+        actor=actor,
+        metadata=payload,
+    )
+    return payload
+
+
+def resume_client_apache_instance(client: Client, *, reason: str, actor=None) -> dict:
+    return sync_client_apache_instance(client, reason=reason, actor=actor)

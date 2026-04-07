@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 import io
 from pathlib import Path
 
 from panel.extensions import db
 from panel.models import (
+    AccountSuspension,
+    BillingCycle,
     BillingTransaction,
     Client,
     ClientService,
@@ -32,7 +34,7 @@ from panel.models import (
 from panel.seed import seed_defaults
 from panel.services.client_apache import client_apache_resource_limits
 from panel.services.api_tokens import issue_api_token
-from panel.services.billing import adjust_balance
+from panel.services.billing import adjust_balance, update_client_financial_status_for_date
 from panel.services.two_factor import current_totp, generate_two_factor_secret
 
 
@@ -1204,3 +1206,170 @@ def test_admin_monitoring_clients_page_loads(client):
     response = client.get("/admin/monitoring/clients")
     assert response.status_code == 200
     assert "Monitoring klientow" in response.get_data(as_text=True)
+
+
+def test_financial_enforcement_grace_suspend_and_auto_unsuspend(app):
+    with app.app_context():
+        actor = User.query.filter_by(username="admin").first()
+        client_profile = Client.query.first()
+        assert actor is not None
+        assert client_profile is not None
+
+        service = ClientService(
+            client=client_profile,
+            name="Hosting Finance",
+            service_type="hosting",
+            status="active",
+            starts_on=date.today(),
+            billing_period="monthly",
+            recurring_amount=Decimal("20.00"),
+            auto_suspend=True,
+            auto_resume=True,
+        )
+        db.session.add(service)
+        db.session.flush()
+
+        db.session.add(
+            BillingCycle(
+                client_service=service,
+                cycle_type="monthly",
+                amount=Decimal("20.00"),
+                due_date=date.today() - timedelta(days=5),
+                status="overdue",
+            )
+        )
+        client_profile.balance.balance = Decimal("-20.00")
+
+        result = update_client_financial_status_for_date(client_profile, actor=actor, as_of=date.today())
+        assert result["service_transitions"] >= 1
+        assert service.status == "suspended"
+        assert client_profile.billing_status == "suspended_non_payment"
+        assert client_profile.user.status == "suspended_financial"
+        assert (
+            AccountSuspension.query.filter_by(
+                client_service_id=service.id,
+                suspension_type="financial",
+                active=True,
+            ).count()
+            == 1
+        )
+
+        adjust_balance(
+            client_profile,
+            Decimal("50.00"),
+            "topup_manual",
+            "Test auto-unsuspend",
+            actor=actor,
+        )
+        db.session.commit()
+
+        db.session.refresh(service)
+        db.session.refresh(client_profile)
+        assert service.status == "active"
+        assert client_profile.billing_status == "current"
+        assert client_profile.user.status == "active"
+        assert BillingCycle.query.filter_by(client_service_id=service.id, status="overdue").count() == 0
+        assert (
+            AccountSuspension.query.filter_by(
+                client_service_id=service.id,
+                suspension_type="financial",
+                active=True,
+            ).count()
+            == 0
+        )
+
+
+def test_financial_enforcement_uses_plan_grace_override(app):
+    with app.app_context():
+        actor = User.query.filter_by(username="admin").first()
+        client_profile = Client.query.first()
+        assert actor is not None
+        assert client_profile is not None
+
+        plan = ServicePlan(
+            name="Grace Plan",
+            code="grace-plan",
+            monthly_price=Decimal("30.00"),
+            daily_price=Decimal("1.00"),
+            yearly_price=Decimal("300.00"),
+            grace_days_override=7,
+            limits_json={},
+            is_active=True,
+        )
+        service = ClientService(
+            client=client_profile,
+            plan=plan,
+            name="Hosting Grace",
+            service_type="hosting",
+            status="active",
+            starts_on=date.today(),
+            billing_period="monthly",
+            recurring_amount=Decimal("30.00"),
+            auto_suspend=True,
+            auto_resume=True,
+        )
+        db.session.add_all([plan, service])
+        db.session.flush()
+
+        due_date = date.today() - timedelta(days=4)
+        db.session.add(
+            BillingCycle(
+                client_service=service,
+                cycle_type="monthly",
+                amount=Decimal("30.00"),
+                due_date=due_date,
+                status="overdue",
+            )
+        )
+        client_profile.balance.balance = Decimal("-5.00")
+
+        update_client_financial_status_for_date(client_profile, actor=actor, as_of=date.today())
+        assert service.status == "pending_payment"
+        assert client_profile.billing_status == "in_grace_period"
+
+        update_client_financial_status_for_date(client_profile, actor=actor, as_of=due_date + timedelta(days=8))
+        assert service.status == "suspended"
+        assert client_profile.billing_status == "suspended_non_payment"
+
+
+def test_financial_enforcement_manual_override_prevents_auto_suspend_and_unsuspend(app):
+    with app.app_context():
+        actor = User.query.filter_by(username="admin").first()
+        client_profile = Client.query.first()
+        assert actor is not None
+        assert client_profile is not None
+
+        service = ClientService(
+            client=client_profile,
+            name="Hosting Override",
+            service_type="hosting",
+            status="active",
+            starts_on=date.today(),
+            billing_period="monthly",
+            recurring_amount=Decimal("25.00"),
+            auto_suspend=True,
+            auto_resume=True,
+            financial_enforcement_override=True,
+        )
+        db.session.add(service)
+        db.session.flush()
+
+        db.session.add(
+            BillingCycle(
+                client_service=service,
+                cycle_type="monthly",
+                amount=Decimal("25.00"),
+                due_date=date.today() - timedelta(days=10),
+                status="overdue",
+            )
+        )
+        client_profile.balance.balance = Decimal("-10.00")
+
+        update_client_financial_status_for_date(client_profile, actor=actor, as_of=date.today())
+        assert service.status == "active"
+        assert client_profile.billing_status == "overdue"
+
+        service.status = "suspended"
+        client_profile.balance.balance = Decimal("20.00")
+        update_client_financial_status_for_date(client_profile, actor=actor, as_of=date.today())
+        assert service.status == "suspended"

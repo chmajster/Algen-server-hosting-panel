@@ -77,8 +77,8 @@ def dashboard():
         "databases": _safe_count(HostingDatabase.query),
         "ftp_accounts": _safe_count(FTPAccount.query),
         "mailboxes": _safe_count(Mailbox.query),
-        "overdue_clients": _safe_count(Client.query.filter_by(billing_status="overdue")),
-        "suspended_clients": _safe_count(User.query.filter(User.status.in_(["suspended_financial", "blocked_manual"]))),
+        "overdue_clients": _safe_count(Client.query.filter(Client.billing_status.in_(["overdue", "in_grace_period"]))),
+        "suspended_clients": _safe_count(Client.query.filter(Client.billing_status.in_(["suspended_non_payment", "manually_suspended"]))),
         "receivables": _safe_scalar(
             db.session.query(func.coalesce(func.sum(-BillingTransaction.amount), 0)).filter(BillingTransaction.amount < 0),
             0,

@@ -5,13 +5,21 @@ from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, abort, current_app, flash, redirect, render_template, request, url_for
 from flask_login import current_user, login_required
+from sqlalchemy.orm import selectinload
 
 from panel.extensions import csrf, db
 from panel.forms.billing import ClientPlanChangeForm, ClientTopupForm
 from panel.forms.services import ClientServiceForm, ServicePlanForm
 from panel.models import BillingTransaction, Client, ClientService, OnlinePayment, ServicePlan
 from panel.services.audit import log_activity
-from panel.services.billing import adjust_balance, change_service_plan_with_proration, plan_price_for_period, schedule_initial_cycle
+from panel.services.billing import (
+    adjust_balance,
+    change_service_plan_with_proration,
+    financial_enforcement_snapshot,
+    plan_price_for_period,
+    schedule_initial_cycle,
+    update_client_financial_status,
+)
 from panel.services.payments import (
     PaymentProviderError,
     create_checkout_session,
@@ -160,6 +168,7 @@ def _service_plan_form_to_model(form: ServicePlanForm, plan: ServicePlan) -> Ser
     plan.monthly_price = parse(form.monthly_price.data)
     plan.daily_price = parse(form.daily_price.data or "0")
     plan.yearly_price = parse(form.yearly_price.data or "0")
+    plan.grace_days_override = form.grace_days_override.data if form.grace_days_override.data is not None else None
     limits = dict(plan.limits_json or {})
     cpu_value = parse_cpu(form.cpu_cores.data)
     ram_value = parse_ram(form.ram_mb.data)
@@ -211,6 +220,7 @@ def admin_plan_edit(plan_id: int):
         limits = dict(plan.limits_json or {})
         form.cpu_cores.data = str(limits.get("cpu_cores", ""))
         form.ram_mb.data = str(limits.get("ram_mb", ""))
+        form.grace_days_override.data = plan.grace_days_override
     if form.validate_on_submit():
         try:
             _service_plan_form_to_model(form, plan)
@@ -233,7 +243,15 @@ def _populate_service_form(form: ClientServiceForm):
 @login_required
 @roles_required("administrator")
 def admin_services():
-    services = ClientService.query.order_by(ClientService.created_at.desc()).all()
+    services = (
+        ClientService.query.options(
+            selectinload(ClientService.plan),
+            selectinload(ClientService.client),
+        )
+        .order_by(ClientService.created_at.desc())
+        .all()
+    )
+    enforcement_states = financial_enforcement_snapshot(services)
     stats = {
         "total": len(services),
         "active": sum(1 for service in services if service.status == "active"),
@@ -245,7 +263,12 @@ def admin_services():
             if service.status != "deleted" and service.billing_period == "monthly"
         ),
     }
-    return render_template("billing/admin_services.html", services=services, stats=stats)
+    return render_template(
+        "billing/admin_services.html",
+        services=services,
+        stats=stats,
+        enforcement_states=enforcement_states,
+    )
 
 
 @billing_bp.route("/admin/billing/services/new", methods=["GET", "POST"])
@@ -272,6 +295,7 @@ def admin_service_create():
             starts_on=form.starts_on.data,
             auto_suspend=form.auto_suspend.data,
             auto_resume=form.auto_resume.data,
+            financial_enforcement_override=form.financial_enforcement_override.data,
         )
         db.session.add(service)
         db.session.flush()
@@ -281,6 +305,84 @@ def admin_service_create():
         flash("Usługa została utworzona.", "success")
         return redirect(url_for("billing.admin_services"))
     return render_template("billing/admin_service_form.html", form=form, title="Nowa usługa")
+
+
+@billing_bp.route("/admin/billing/services/<int:service_id>/financial-override", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def admin_service_financial_override(service_id: int):
+    service = ClientService.query.get_or_404(service_id)
+    enabled = request.form.get("enabled") == "1"
+    old_value = bool(service.financial_enforcement_override)
+    service.financial_enforcement_override = enabled
+    if old_value != enabled:
+        log_activity(
+            "billing.financial_override",
+            "client_service",
+            f"Ustawiono financial override dla uslugi {service.name}: {old_value} -> {enabled}",
+            entity_id=service.id,
+            client=service.client,
+            actor=current_user,
+            metadata={"old": old_value, "new": enabled},
+        )
+        db.session.commit()
+        flash("Zmieniono ustawienie manualnego override egzekucji finansowej.", "success")
+    else:
+        flash("Ustawienie override nie zostalo zmienione.", "info")
+    return redirect(url_for("billing.admin_services"))
+
+
+@billing_bp.route("/admin/billing/services/<int:service_id>/manual-suspend", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def admin_service_manual_suspend(service_id: int):
+    service = ClientService.query.get_or_404(service_id)
+    reason = (request.form.get("reason") or "Reczne zawieszenie przez operatora").strip()[:255]
+    if service.status != "blocked_manual":
+        old_status = service.status
+        service.status = "blocked_manual"
+        service.manual_lock_reason = reason
+        log_activity(
+            "billing.manual_suspend",
+            "client_service",
+            f"Recznie zawieszono usluge {service.name}",
+            entity_id=service.id,
+            client=service.client,
+            actor=current_user,
+            metadata={"old_status": old_status, "new_status": service.status, "reason": reason},
+        )
+        update_client_financial_status(service.client, actor=current_user)
+        db.session.commit()
+        flash("Usluga zostala recznie zawieszona.", "warning")
+    else:
+        flash("Usluga jest juz recznie zawieszona.", "info")
+    return redirect(url_for("billing.admin_services"))
+
+
+@billing_bp.route("/admin/billing/services/<int:service_id>/manual-unsuspend", methods=["POST"])
+@login_required
+@roles_required("administrator")
+def admin_service_manual_unsuspend(service_id: int):
+    service = ClientService.query.get_or_404(service_id)
+    if service.status == "blocked_manual":
+        old_status = service.status
+        service.status = "active"
+        service.manual_lock_reason = None
+        log_activity(
+            "billing.manual_unsuspend",
+            "client_service",
+            f"Recznie odwieszono usluge {service.name}",
+            entity_id=service.id,
+            client=service.client,
+            actor=current_user,
+            metadata={"old_status": old_status, "new_status": service.status},
+        )
+        update_client_financial_status(service.client, actor=current_user)
+        db.session.commit()
+        flash("Usluga zostala recznie odwieszona.", "success")
+    else:
+        flash("Usluga nie jest recznie zawieszona.", "info")
+    return redirect(url_for("billing.admin_services"))
 
 
 @billing_bp.route("/admin/billing/transactions")
@@ -305,6 +407,7 @@ def client_billing():
         .order_by(ClientService.created_at.desc())
         .all()
     )
+    enforcement_states = financial_enforcement_snapshot(hosting_services)
     plan_change_forms: dict[int, ClientPlanChangeForm] = {}
     for service in hosting_services:
         plan_change_forms[service.id] = _plan_change_form_for_service(service, prefix=f"plan-{service.id}")
@@ -324,6 +427,7 @@ def client_billing():
         transactions=transactions,
         topup_form=topup_form,
         hosting_services=hosting_services,
+        enforcement_states=enforcement_states,
         plan_change_forms=plan_change_forms,
         online_payments_enabled=payments_enabled,
         online_payments_provider=online_payments_provider(),
